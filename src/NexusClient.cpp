@@ -64,6 +64,22 @@ std::string ExtractHostPort(const std::string& baseUrl) {
     return baseUrl.substr(hostStart, slash - hostStart);
 }
 
+std::string EncodeUrlForCurl(const std::string& rawUrl) {
+    std::string encoded;
+    encoded.reserve(rawUrl.size());
+
+    for (unsigned char ch : rawUrl) {
+        if (ch == ' ') {
+            encoded += "%20";
+            continue;
+        }
+
+        encoded.push_back(static_cast<char>(ch));
+    }
+
+    return encoded;
+}
+
 }  // namespace
 
 namespace confy {
@@ -297,7 +313,8 @@ bool NexusClient::HttpGetText(const std::string& urlWithAuth,
     }
 
     out.clear();
-    curl_easy_setopt(curl, CURLOPT_URL, urlWithAuth.c_str());
+    const std::string requestUrl = EncodeUrlForCurl(urlWithAuth);
+    curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToString);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
@@ -339,7 +356,8 @@ bool NexusClient::HttpDownloadBinary(const std::string& urlWithAuth,
         return false;
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL, urlWithAuth.c_str());
+    const std::string requestUrl = EncodeUrlForCurl(urlWithAuth);
+    curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToFile);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
