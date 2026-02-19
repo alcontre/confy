@@ -190,6 +190,22 @@ std::string NormalizeFilePath(std::string path) {
     return path;
 }
 
+bool ContainsParentTraversal(const std::string& path) {
+    std::size_t start = 0;
+    while (start <= path.size()) {
+        const auto end = path.find('/', start);
+        const auto segment = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (segment == "..") {
+            return true;
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
 std::vector<std::string> ExtractHrefValues(const std::string& html) {
     static const std::regex hrefPattern(R"(href\s*=\s*["']([^"']+)["'])", std::regex::icase);
     std::vector<std::string> hrefs;
@@ -233,7 +249,7 @@ bool ExtractPathFromHref(const std::string& href,
     }
 
     value = DecodePercentEncoding(value);
-    if (value.find("..") != std::string::npos) {
+    if (ContainsParentTraversal(value)) {
         return false;
     }
     outPath = isDirectory ? NormalizeDirectoryPath(value) : NormalizeFilePath(value);
