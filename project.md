@@ -49,9 +49,9 @@ Implementation notes:
 
 Basic TODO list: (update as we go)
 
-- Set up basic build infrastructure (wxwidgets git submodule, etc)
-- Sketch out what UI looks like (we will iterate here a bit)
-- Parsing XML into an object matching our semantics
-- Develop helper code/library to pull from Bitbucket and Nexus
-   - requires token-based authentication
-- Implement settings window, reading/saving to a user-specific config file
+- [x] Set up basic build infrastructure (initial CMake + wxWidgets app skeleton)
+- [x] Sketch out what UI looks like (initial list + load/apply window, to be iterated)
+- [~] Parsing XML into an object matching our semantics (initial loader implemented; needs hardening)
+- [ ] Develop helper code/library to pull from Bitbucket and Nexus
+    - requires token-based authentication
+- [ ] Implement settings window, reading/saving to a user-specific config file
