@@ -39,6 +39,7 @@ private:
     bool ParseRepoInfo(const std::string& inputUrl, RepoInfo& out) const;
     bool ListAssets(const RepoInfo& repo,
                     const ServerCredentials& creds,
+                    const std::string& query,
                     std::vector<NexusArtifactAsset>& out,
                     std::string& errorMessage) const;
     bool HttpGetText(const std::string& urlWithAuth, std::string& out, std::string& errorMessage) const;

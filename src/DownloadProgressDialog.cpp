@@ -35,6 +35,8 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         const auto& job = jobs_[i];
 
         auto* rowSizer = new wxBoxSizer(wxHORIZONTAL);
+        auto* contentSizer = new wxBoxSizer(wxVERTICAL);
+        auto* mainLineSizer = new wxBoxSizer(wxHORIZONTAL);
 
         auto* nameLabel = new wxStaticText(this, wxID_ANY, job.componentName);
         nameLabel->SetMinSize(wxSize(180, -1));
@@ -44,9 +46,23 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         auto* statusLabel = new wxStaticText(this, wxID_ANY, "Queued");
         statusLabel->SetMinSize(wxSize(120, -1));
 
+        auto* detailLabel = new wxStaticText(this, wxID_ANY, "");
+        detailLabel->SetMinSize(wxSize(320, -1));
+        detailLabel->Wrap(420);
+        detailLabel->Hide();
+
+        auto* retryButton = new wxButton(this, wxID_ANY, "Retry");
+        retryButton->Disable();
+
+        mainLineSizer->Add(gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+        mainLineSizer->Add(statusLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        mainLineSizer->Add(retryButton, 0, wxALIGN_CENTER_VERTICAL);
+
+        contentSizer->Add(mainLineSizer, 0, wxEXPAND);
+        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 4);
+
         rowSizer->Add(nameLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        rowSizer->Add(gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-        rowSizer->Add(statusLabel, 0, wxALIGN_CENTER_VERTICAL);
+        rowSizer->Add(contentSizer, 1, wxEXPAND);
 
         listSizer->Add(rowSizer, 0, wxEXPAND | wxBOTTOM, 6);
 
@@ -54,20 +70,36 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         row.nameLabel = nameLabel;
         row.gauge = gauge;
         row.statusLabel = statusLabel;
+        row.detailLabel = detailLabel;
+        row.retryButton = retryButton;
 
         rows_.push_back(row);
         rowIndexByComponent_[job.componentIndex] = i;
+
+        retryButton->Bind(wxEVT_BUTTON,
+                          [this, componentIndex = job.componentIndex](wxCommandEvent&) {
+                              OnRetryComponent(componentIndex);
+                          });
     }
 
     rootSizer->Add(listSizer, 1, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
 
+    auto* actionSizer = new wxBoxSizer(wxHORIZONTAL);
+    retryFailedButton_ = new wxButton(this, wxID_ANY, "Retry Failed");
+    retryFailedButton_->Disable();
+    actionSizer->Add(retryFailedButton_, 0, wxRIGHT, 8);
+    actionSizer->AddStretchSpacer();
+
     cancelButton_ = new wxButton(this, wxID_CANCEL, "Cancel");
-    rootSizer->Add(cancelButton_, 0, wxALL | wxALIGN_RIGHT, 8);
+    actionSizer->Add(cancelButton_, 0);
+
+    rootSizer->Add(actionSizer, 0, wxALL | wxEXPAND, 8);
 
     SetSizerAndFit(rootSizer);
     SetMinSize(wxSize(720, 320));
 
     Bind(wxEVT_BUTTON, &DownloadProgressDialog::OnCancel, this, wxID_CANCEL);
+    retryFailedButton_->Bind(wxEVT_BUTTON, &DownloadProgressDialog::OnRetryFailed, this);
     Bind(wxEVT_CLOSE_WINDOW, &DownloadProgressDialog::OnClose, this);
 
     timer_ = new wxTimer(this, kTimerId);
@@ -78,6 +110,7 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         worker_.Submit(job);
     }
 
+    UpdateDialogControls();
     timer_->Start(100);
 }
 
@@ -93,7 +126,10 @@ void DownloadProgressDialog::OnTimer(wxTimerEvent&) {
 }
 
 void DownloadProgressDialog::OnCancel(wxCommandEvent&) {
-    if (finished_) {
+    if (!HasActiveJobs()) {
+        if (timer_ != nullptr) {
+            timer_->Stop();
+        }
         EndModal(wxID_OK);
         return;
     }
@@ -103,10 +139,29 @@ void DownloadProgressDialog::OnCancel(wxCommandEvent&) {
         cancelButton_->Disable();
         worker_.RequestCancelAll();
     }
+
+    UpdateDialogControls();
+}
+
+void DownloadProgressDialog::OnRetryFailed(wxCommandEvent&) {
+    if (cancelRequested_ || HasActiveJobs()) {
+        return;
+    }
+
+    for (std::size_t i = 0; i < rows_.size(); ++i) {
+        if (rows_[i].state == RowState::Failed) {
+            QueueRetry(jobs_[i].componentIndex);
+        }
+    }
+
+    UpdateDialogControls();
 }
 
 void DownloadProgressDialog::OnClose(wxCloseEvent& event) {
-    if (finished_) {
+    if (!HasActiveJobs()) {
+        if (timer_ != nullptr) {
+            timer_->Stop();
+        }
         event.Skip();
         return;
     }
@@ -120,66 +175,148 @@ void DownloadProgressDialog::OnClose(wxCloseEvent& event) {
     event.Veto();
 }
 
+void DownloadProgressDialog::OnRetryComponent(std::size_t componentIndex) {
+    if (cancelRequested_ || HasActiveJobs()) {
+        return;
+    }
+
+    QueueRetry(componentIndex);
+    UpdateDialogControls();
+}
+
 void DownloadProgressDialog::ConsumeWorkerEvents() {
     DownloadEvent event;
     while (worker_.TryPopEvent(event)) {
-        const auto it = rowIndexByComponent_.find(event.componentIndex);
-        if (it == rowIndexByComponent_.end()) {
-            continue;
-        }
-
-        auto& row = rows_[it->second];
-
         switch (event.type) {
             case DownloadEventType::Started:
-                row.statusLabel->SetLabelText("Starting");
-                row.gauge->SetValue(0);
+                SetRowState(event.componentIndex, RowState::Running, "Starting", 0);
                 break;
             case DownloadEventType::Progress:
-                row.statusLabel->SetLabelText("Downloading");
-                row.gauge->SetValue(event.percent);
+                SetRowState(event.componentIndex, RowState::Running, "Downloading", event.percent);
                 break;
             case DownloadEventType::Completed:
-                row.gauge->SetValue(100);
-                MarkFinishedAndCheckCompletion(event.componentIndex, "Completed");
+                SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
                 break;
             case DownloadEventType::Cancelled:
-                MarkFinishedAndCheckCompletion(event.componentIndex, "Cancelled");
+                SetRowState(event.componentIndex, RowState::Cancelled, "Cancelled", 0);
                 break;
             case DownloadEventType::Failed:
-                MarkFinishedAndCheckCompletion(event.componentIndex, "Failed");
+                if (!event.message.empty()) {
+                    SetRowState(event.componentIndex,
+                                RowState::Failed,
+                                "Failed",
+                                0,
+                                wxString::FromUTF8(event.message));
+                } else {
+                    SetRowState(event.componentIndex, RowState::Failed, "Failed", 0);
+                }
                 break;
         }
     }
+
+    UpdateDialogControls();
 }
 
-void DownloadProgressDialog::MarkFinishedAndCheckCompletion(std::size_t componentIndex,
-                                                            const wxString& status) {
+void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
+                                         RowState state,
+                                         const wxString& status,
+                                         int percent,
+                                         const wxString& detail) {
     const auto it = rowIndexByComponent_.find(componentIndex);
     if (it == rowIndexByComponent_.end()) {
         return;
     }
 
-    auto& row = rows_[it->second];
-    row.statusLabel->SetLabelText(status);
-    row.finished = true;
-
-    bool allFinished = true;
-    for (const auto& item : rows_) {
-        if (!item.finished) {
-            allFinished = false;
-            break;
-        }
-    }
-
-    if (!allFinished || finished_) {
+    if (it->second >= rows_.size()) {
         return;
     }
 
-    finished_ = true;
-    timer_->Stop();
-    cancelButton_->Enable();
-    cancelButton_->SetLabel("Close");
+    auto& row = rows_[it->second];
+
+    if (row.statusLabel == nullptr || row.gauge == nullptr || row.retryButton == nullptr ||
+        row.detailLabel == nullptr) {
+        return;
+    }
+
+    row.state = state;
+    row.statusLabel->SetLabelText(status);
+    row.gauge->SetValue(percent);
+    row.detailLabel->SetLabelText(detail);
+    if (detail.empty()) {
+        row.detailLabel->Hide();
+    } else {
+        row.detailLabel->Wrap(420);
+        row.detailLabel->Show();
+    }
+    row.retryButton->Enable(state == RowState::Failed && !cancelRequested_);
+    Layout();
+}
+
+void DownloadProgressDialog::QueueRetry(std::size_t componentIndex) {
+    const auto it = rowIndexByComponent_.find(componentIndex);
+    if (it == rowIndexByComponent_.end()) {
+        return;
+    }
+
+    if (it->second >= rows_.size() || it->second >= jobs_.size()) {
+        return;
+    }
+
+    auto& row = rows_[it->second];
+    if (row.state != RowState::Failed) {
+        return;
+    }
+
+    SetRowState(componentIndex, RowState::Queued, "Queued", 0);
+    worker_.Submit(jobs_[it->second]);
+}
+
+bool DownloadProgressDialog::HasActiveJobs() const {
+    for (const auto& row : rows_) {
+        if (row.state == RowState::Queued || row.state == RowState::Running) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool DownloadProgressDialog::HasFailedJobs() const {
+    for (const auto& row : rows_) {
+        if (row.state == RowState::Failed) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void DownloadProgressDialog::UpdateDialogControls() {
+    const bool active = HasActiveJobs();
+    const bool failed = HasFailedJobs();
+
+    for (auto& row : rows_) {
+        if (row.retryButton != nullptr) {
+            row.retryButton->Enable(!cancelRequested_ && !active && row.state == RowState::Failed);
+        }
+    }
+
+    if (retryFailedButton_ != nullptr) {
+        retryFailedButton_->Enable(!cancelRequested_ && !active && failed);
+    }
+
+    if (active) {
+        if (cancelButton_ != nullptr) {
+            cancelButton_->SetLabel("Cancel");
+            cancelButton_->Enable(!cancelRequested_);
+        }
+        return;
+    }
+
+    if (cancelButton_ != nullptr) {
+        cancelButton_->SetLabel("Close");
+        cancelButton_->Enable(true);
+    }
 }
 
 }  // namespace confy

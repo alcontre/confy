@@ -23,27 +23,47 @@ public:
     ~DownloadProgressDialog() override;
 
 private:
+    enum class RowState {
+        Queued,
+        Running,
+        Completed,
+        Failed,
+        Cancelled,
+    };
+
     struct ProgressRow {
         wxStaticText* nameLabel{nullptr};
         wxGauge* gauge{nullptr};
         wxStaticText* statusLabel{nullptr};
-        bool finished{false};
+        wxStaticText* detailLabel{nullptr};
+        wxButton* retryButton{nullptr};
+        RowState state{RowState::Queued};
     };
 
     void OnTimer(wxTimerEvent& event);
     void OnCancel(wxCommandEvent& event);
+    void OnRetryFailed(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
+    void OnRetryComponent(std::size_t componentIndex);
     void ConsumeWorkerEvents();
-    void MarkFinishedAndCheckCompletion(std::size_t componentIndex, const wxString& status);
+    void SetRowState(std::size_t componentIndex,
+                     RowState state,
+                     const wxString& status,
+                     int percent,
+                     const wxString& detail = wxString());
+    void QueueRetry(std::size_t componentIndex);
+    void UpdateDialogControls();
+    bool HasActiveJobs() const;
+    bool HasFailedJobs() const;
 
     std::vector<NexusDownloadJob> jobs_;
     std::vector<ProgressRow> rows_;
     std::unordered_map<std::size_t, std::size_t> rowIndexByComponent_;
 
-    DownloadWorkerQueue worker_{4};
+    DownloadWorkerQueue worker_{1};
     wxTimer* timer_{nullptr};
     wxButton* cancelButton_{nullptr};
-    bool finished_{false};
+    wxButton* retryFailedButton_{nullptr};
     bool cancelRequested_{false};
 };
 

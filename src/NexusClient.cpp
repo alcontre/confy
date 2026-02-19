@@ -3,15 +3,52 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace {
+
+bool ResetDirectoryWithRetries(const fs::path& targetDirectory,
+                               std::string& errorMessage,
+                               std::size_t maxAttempts = 3) {
+    for (std::size_t attempt = 1; attempt <= maxAttempts; ++attempt) {
+        std::error_code removeError;
+        fs::remove_all(targetDirectory, removeError);
+        if (removeError) {
+            if (attempt == maxAttempts) {
+                errorMessage = "Failed to clear target directory '" + targetDirectory.string() +
+                               "': " + removeError.message();
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            continue;
+        }
+
+        std::error_code createError;
+        fs::create_directories(targetDirectory, createError);
+        if (!createError) {
+            return true;
+        }
+
+        if (attempt == maxAttempts) {
+            errorMessage = "Failed to create target directory '" + targetDirectory.string() +
+                           "': " + createError.message();
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    errorMessage = "Failed to prepare target directory '" + targetDirectory.string() + "'.";
+    return false;
+}
 
 size_t WriteToString(void* contents, size_t size, size_t nmemb, void* userp) {
     const size_t total = size * nmemb;
@@ -120,15 +157,16 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
     std::cout << "[nexus] credentials resolved for hostPort='" << repo.hostPort << "' username='"
               << creds.username << "'" << std::endl;
 
+    const auto prefix = componentName + "/" + version + "/" + buildType + "/";
+
     std::vector<NexusArtifactAsset> assets;
-    if (!ListAssets(repo, creds, assets, errorMessage)) {
+    if (!ListAssets(repo, creds, prefix, assets, errorMessage)) {
         std::cerr << "[nexus] list assets failed: " << errorMessage << std::endl;
         return false;
     }
 
-    std::cout << "[nexus] total assets returned=" << assets.size() << std::endl;
-
-    const auto prefix = componentName + "/" + version + "/" + buildType + "/";
+    std::cout << "[nexus] total assets returned (query='" << prefix << "')=" << assets.size()
+              << std::endl;
     struct MatchedAsset {
         NexusArtifactAsset asset;
         std::string relativePath;
@@ -173,6 +211,25 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
               << std::endl;
 
     if (matches.empty()) {
+        std::cout << "[nexus] no matches from query-scoped listing, retrying with full repository listing"
+                  << std::endl;
+
+        assets.clear();
+        if (!ListAssets(repo, creds, {}, assets, errorMessage)) {
+            std::cerr << "[nexus] fallback list assets failed: " << errorMessage << std::endl;
+            return false;
+        }
+
+        matches.clear();
+        for (const auto& asset : assets) {
+            std::string relativePath;
+            if (extractRelativePath(asset.path, relativePath)) {
+                matches.push_back({asset, relativePath});
+            }
+        }
+    }
+
+    if (matches.empty()) {
         errorMessage = "No assets found for path prefix: " + prefix;
         for (const auto& asset : assets) {
             std::cout << "[nexus] candidate asset path='" << asset.path << "'" << std::endl;
@@ -181,7 +238,11 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         return false;
     }
 
-    fs::create_directories(targetDirectory);
+    if (!ResetDirectoryWithRetries(fs::path(targetDirectory), errorMessage)) {
+        std::cerr << "[nexus] target directory reset failed target='" << targetDirectory
+                  << "' error='" << errorMessage << "'" << std::endl;
+        return false;
+    }
 
     const std::size_t total = matches.size();
     std::size_t completed = 0;
@@ -240,12 +301,16 @@ bool NexusClient::ParseRepoInfo(const std::string& inputUrl, RepoInfo& out) cons
 
 bool NexusClient::ListAssets(const RepoInfo& repo,
                              const ServerCredentials& creds,
+                             const std::string& query,
                              std::vector<NexusArtifactAsset>& out,
                              std::string& errorMessage) const {
     std::string continuation;
 
     do {
         std::string url = repo.baseUrl + "/service/rest/v1/search/assets?repository=" + UrlEncode(repo.repository);
+        if (!query.empty()) {
+            url += "&q=" + UrlEncode(query);
+        }
         if (!continuation.empty()) {
             url += "&continuationToken=" + UrlEncode(continuation);
         }
