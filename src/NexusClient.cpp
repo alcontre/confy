@@ -445,7 +445,7 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
         std::cout << "[nexus] browse listing url='" << browseUrl << "'" << std::endl;
 
         std::string responseBody;
-        if (!HttpGetText(BuildAuthUrl(browseUrl, creds), responseBody, errorMessage)) {
+        if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
             std::cerr << "[nexus] browse listing request failed: " << errorMessage << std::endl;
             return false;
         }
