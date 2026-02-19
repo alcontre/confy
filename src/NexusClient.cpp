@@ -462,8 +462,4 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
     return true;
 }
 
-std::string NexusClient::BuildCurlUserPwd(const ServerCredentials& creds) const {
-    return creds.username + ":" + creds.password;
-}
-
 }  // namespace confy

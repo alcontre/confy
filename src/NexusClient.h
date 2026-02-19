@@ -28,6 +28,9 @@ public:
                               std::atomic<bool>& cancelRequested,
                               ProgressCallback progress,
                               std::string& errorMessage) const;
+    static std::string BuildCurlUserPwd(const ServerCredentials& creds) {
+        return creds.username + ":" + creds.password;
+    }
 
 private:
     struct RepoInfo {
@@ -50,8 +53,6 @@ private:
                             const ServerCredentials& creds,
                             const std::string& outFile,
                             std::string& errorMessage) const;
-    std::string BuildCurlUserPwd(const ServerCredentials& creds) const;
-
     AuthCredentials credentials_;
 };
 
