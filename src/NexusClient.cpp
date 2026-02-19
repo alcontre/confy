@@ -1,12 +1,15 @@
 #include "NexusClient.h"
 
 #include <curl/curl.h>
+#include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <fstream>
-#include <regex>
+#include <iostream>
+#include <vector>
 
 namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 namespace {
 
@@ -75,34 +78,90 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                                        std::atomic<bool>& cancelRequested,
                                        ProgressCallback progress,
                                        std::string& errorMessage) const {
+    std::cout << "[nexus] download request repoUrl='" << repositoryBrowseUrl << "' component='"
+              << componentName << "' version='" << version << "' buildType='" << buildType
+              << "' target='" << targetDirectory << "'" << std::endl;
+
     RepoInfo repo;
     if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
         errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+        std::cerr << "[nexus] parse repo URL failed: " << errorMessage << std::endl;
         return false;
     }
+
+    std::cout << "[nexus] parsed baseUrl='" << repo.baseUrl << "' repository='" << repo.repository
+              << "' hostPort='" << repo.hostPort << "'" << std::endl;
 
     ServerCredentials creds;
     if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
         errorMessage =
             "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+        std::cerr << "[nexus] credential lookup failed for hostPort='" << repo.hostPort << "'"
+                  << std::endl;
         return false;
     }
+
+    std::cout << "[nexus] credentials resolved for hostPort='" << repo.hostPort << "' username='"
+              << creds.username << "'" << std::endl;
 
     std::vector<NexusArtifactAsset> assets;
     if (!ListAssets(repo, creds, assets, errorMessage)) {
+        std::cerr << "[nexus] list assets failed: " << errorMessage << std::endl;
         return false;
     }
 
+    std::cout << "[nexus] total assets returned=" << assets.size() << std::endl;
+
     const auto prefix = componentName + "/" + version + "/" + buildType + "/";
-    std::vector<NexusArtifactAsset> matches;
+    struct MatchedAsset {
+        NexusArtifactAsset asset;
+        std::string relativePath;
+    };
+
+    auto extractRelativePath = [&prefix](const std::string& rawPath, std::string& relativePath) -> bool {
+        std::string normalized = rawPath;
+        while (!normalized.empty() && normalized.front() == '/') {
+            normalized.erase(normalized.begin());
+        }
+
+        if (normalized.rfind(prefix, 0) == 0) {
+            relativePath = normalized.substr(prefix.size());
+            return true;
+        }
+
+        const std::string slashPrefix = "/" + prefix;
+        auto pos = normalized.find(slashPrefix);
+        if (pos != std::string::npos) {
+            relativePath = normalized.substr(pos + slashPrefix.size());
+            return true;
+        }
+
+        pos = normalized.find(prefix);
+        if (pos != std::string::npos) {
+            relativePath = normalized.substr(pos + prefix.size());
+            return true;
+        }
+
+        return false;
+    };
+
+    std::vector<MatchedAsset> matches;
     for (const auto& asset : assets) {
-        if (asset.path.rfind(prefix, 0) == 0) {
-            matches.push_back(asset);
+        std::string relativePath;
+        if (extractRelativePath(asset.path, relativePath)) {
+            matches.push_back({asset, relativePath});
         }
     }
 
+    std::cout << "[nexus] filtered matches prefix='" << prefix << "' count=" << matches.size()
+              << std::endl;
+
     if (matches.empty()) {
         errorMessage = "No assets found for path prefix: " + prefix;
+        for (const auto& asset : assets) {
+            std::cout << "[nexus] candidate asset path='" << asset.path << "'" << std::endl;
+        }
+        std::cerr << "[nexus] no matching assets" << std::endl;
         return false;
     }
 
@@ -111,24 +170,28 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
     const std::size_t total = matches.size();
     std::size_t completed = 0;
 
-    for (const auto& asset : matches) {
+    for (const auto& matched : matches) {
         if (cancelRequested.load()) {
+            std::cout << "[nexus] cancel requested during downloads" << std::endl;
             return false;
         }
 
-        const auto relative = asset.path.substr(prefix.size());
-        const fs::path outputPath = fs::path(targetDirectory) / relative;
+        const fs::path outputPath = fs::path(targetDirectory) / matched.relativePath;
         fs::create_directories(outputPath.parent_path());
 
         std::string downloadError;
-        if (!HttpDownloadBinary(BuildAuthUrl(asset.downloadUrl, creds), outputPath.string(), downloadError)) {
-            errorMessage = "Failed downloading '" + asset.path + "': " + downloadError;
+        std::cout << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
+                  << "'" << std::endl;
+        if (!HttpDownloadBinary(BuildAuthUrl(matched.asset.downloadUrl, creds), outputPath.string(), downloadError)) {
+            errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
+            std::cerr << "[nexus] download failed path='" << matched.asset.path << "' error='" << downloadError
+                      << "'" << std::endl;
             return false;
         }
 
         ++completed;
         const int percent = static_cast<int>((completed * 100) / total);
-        progress(percent, "Downloading " + asset.path);
+        progress(percent, "Downloading " + matched.asset.path);
     }
 
     return true;
@@ -171,36 +234,50 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
             url += "&continuationToken=" + UrlEncode(continuation);
         }
 
-        std::string json;
-        if (!HttpGetText(BuildAuthUrl(url, creds), json, errorMessage)) {
+        std::cout << "[nexus] list assets url='" << url << "'" << std::endl;
+
+        std::string responseBody;
+        if (!HttpGetText(BuildAuthUrl(url, creds), responseBody, errorMessage)) {
+            std::cerr << "[nexus] list assets request failed: " << errorMessage << std::endl;
             return false;
         }
 
-        const std::regex objectPattern(
-            R"REGEX(\{[^\{\}]*"path"\s*:\s*"([^"]+)"[^\{\}]*"downloadUrl"\s*:\s*"([^"]+)"[^\{\}]*\}|\{[^\{\}]*"downloadUrl"\s*:\s*"([^"]+)"[^\{\}]*"path"\s*:\s*"([^"]+)"[^\{\}]*\})REGEX");
-        auto begin = std::sregex_iterator(json.begin(), json.end(), objectPattern);
-        auto end = std::sregex_iterator();
-        for (auto it = begin; it != end; ++it) {
-            NexusArtifactAsset asset;
-            if (!(*it)[1].str().empty()) {
-                asset.path = (*it)[1].str();
-                asset.downloadUrl = (*it)[2].str();
-            } else {
-                asset.path = (*it)[4].str();
-                asset.downloadUrl = (*it)[3].str();
-            }
-            if (!asset.path.empty() && !asset.downloadUrl.empty()) {
-                out.push_back(std::move(asset));
+        std::cout << "[nexus] list assets response bytes=" << responseBody.size() << std::endl;
+
+        json parsedJson;
+        try {
+            parsedJson = json::parse(responseBody);
+        } catch (const std::exception& ex) {
+            errorMessage = std::string("Failed to parse Nexus JSON response: ") + ex.what();
+            std::cerr << "[nexus] JSON parse failed: " << errorMessage << std::endl;
+            return false;
+        }
+
+        std::size_t pageAssets = 0;
+        if (parsedJson.contains("items") && parsedJson["items"].is_array()) {
+            for (const auto& item : parsedJson["items"]) {
+                if (!item.is_object()) {
+                    continue;
+                }
+                if (!item.contains("path") || !item["path"].is_string()) {
+                    continue;
+                }
+                if (!item.contains("downloadUrl") || !item["downloadUrl"].is_string()) {
+                    continue;
+                }
+
+                out.push_back({item["path"].get<std::string>(), item["downloadUrl"].get<std::string>()});
+                ++pageAssets;
             }
         }
 
-        const std::regex continuationPattern(R"REGEX("continuationToken"\s*:\s*(null|"([^"]*)"))REGEX");
-        std::smatch match;
-        if (std::regex_search(json, match, continuationPattern)) {
-            if (match[1].str() == "null") {
-                continuation.clear();
+        std::cout << "[nexus] parsed assets this page count=" << pageAssets << std::endl;
+
+        if (parsedJson.contains("continuationToken") && !parsedJson["continuationToken"].is_null()) {
+            if (parsedJson["continuationToken"].is_string()) {
+                continuation = parsedJson["continuationToken"].get<std::string>();
             } else {
-                continuation = match[2].str();
+                continuation.clear();
             }
         } else {
             continuation.clear();
@@ -233,11 +310,13 @@ bool NexusClient::HttpGetText(const std::string& urlWithAuth,
 
     if (result != CURLE_OK) {
         errorMessage = std::string("HTTP request failed: ") + curl_easy_strerror(result);
+        std::cerr << "[nexus] http get failed error='" << errorMessage << "'" << std::endl;
         return false;
     }
 
     if (statusCode < 200 || statusCode >= 300) {
         errorMessage = "HTTP status " + std::to_string(statusCode);
+        std::cerr << "[nexus] http get status=" << statusCode << std::endl;
         return false;
     }
 
@@ -250,6 +329,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& urlWithAuth,
     std::ofstream output(outFile, std::ios::binary);
     if (!output) {
         errorMessage = "Unable to open local output file";
+        std::cerr << "[nexus] open output file failed path='" << outFile << "'" << std::endl;
         return false;
     }
 
@@ -272,16 +352,21 @@ bool NexusClient::HttpDownloadBinary(const std::string& urlWithAuth,
 
     if (result != CURLE_OK) {
         errorMessage = std::string("HTTP download failed: ") + curl_easy_strerror(result);
+        std::cerr << "[nexus] http download failed path='" << outFile << "' error='" << errorMessage
+                  << "'" << std::endl;
         return false;
     }
 
     if (statusCode < 200 || statusCode >= 300) {
         errorMessage = "HTTP status " + std::to_string(statusCode);
+        std::cerr << "[nexus] http download status=" << statusCode << " path='" << outFile << "'"
+                  << std::endl;
         return false;
     }
 
     if (!output.good()) {
         errorMessage = "Unable to write local output file";
+        std::cerr << "[nexus] write output file failed path='" << outFile << "'" << std::endl;
         return false;
     }
 

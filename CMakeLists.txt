@@ -35,7 +35,10 @@ find_package(CURL REQUIRED)
 include(${wxWidgets_USE_FILE})
 
 add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
-target_include_directories(confy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml)
+target_include_directories(confy PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/single_include
+)
 target_link_libraries(confy PRIVATE ${wxWidgets_LIBRARIES} CURL::libcurl)
 
 add_executable(confy_parser_smoke

@@ -4,6 +4,7 @@
 #include "AuthCredentials.h"
 
 #include <cstdlib>
+#include <iostream>
 #include <thread>
 
 #include <wx/init.h>
@@ -31,6 +32,8 @@ void DownloadWorkerQueue::Start() {
     for (std::size_t i = 0; i < workerCount_; ++i) {
         workers_.emplace_back(&DownloadWorkerQueue::WorkerLoop, this);
     }
+
+    std::cout << "[download-worker] started with workerCount=" << workerCount_ << std::endl;
 }
 
 void DownloadWorkerQueue::Stop() {
@@ -60,9 +63,13 @@ void DownloadWorkerQueue::Stop() {
         std::queue<NexusDownloadJob> empty;
         pendingJobs_.swap(empty);
     }
+
+    std::cout << "[download-worker] stopped" << std::endl;
 }
 
 void DownloadWorkerQueue::Submit(NexusDownloadJob job) {
+    std::cout << "[download-worker] enqueue jobId=" << job.jobId << " component='" << job.componentName
+              << "' version='" << job.version << "' buildType='" << job.buildType << "'" << std::endl;
     {
         std::scoped_lock lock(queueMutex_);
         pendingJobs_.push(std::move(job));
@@ -72,6 +79,7 @@ void DownloadWorkerQueue::Submit(NexusDownloadJob job) {
 
 void DownloadWorkerQueue::RequestCancelAll() {
     cancelAllRequested_.store(true);
+    std::cout << "[download-worker] cancel-all requested" << std::endl;
 }
 
 bool DownloadWorkerQueue::TryPopEvent(DownloadEvent& outEvent) {
@@ -88,6 +96,7 @@ bool DownloadWorkerQueue::TryPopEvent(DownloadEvent& outEvent) {
 void DownloadWorkerQueue::WorkerLoop() {
     wxInitializer wxInit;
     if (!wxInit.IsOk()) {
+        std::cerr << "[download-worker] wx runtime init failed in worker thread" << std::endl;
         while (true) {
             NexusDownloadJob job;
             {
@@ -102,6 +111,9 @@ void DownloadWorkerQueue::WorkerLoop() {
         }
     }
 
+    std::cout << "[download-worker] worker thread started (id=" << std::this_thread::get_id() << ")"
+              << std::endl;
+
     while (true) {
         NexusDownloadJob job;
 
@@ -110,6 +122,8 @@ void DownloadWorkerQueue::WorkerLoop() {
             queueCv_.wait(lock, [this]() { return stopping_ || !pendingJobs_.empty(); });
 
             if (stopping_ && pendingJobs_.empty()) {
+                std::cout << "[download-worker] worker thread exiting (id=" << std::this_thread::get_id() << ")"
+                          << std::endl;
                 return;
             }
 
@@ -118,6 +132,7 @@ void DownloadWorkerQueue::WorkerLoop() {
         }
 
         if (cancelAllRequested_.load()) {
+            std::cout << "[download-worker] skip jobId=" << job.jobId << " due to cancellation" << std::endl;
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Cancelled, 0, "Cancelled"});
             continue;
         }
@@ -132,10 +147,13 @@ void DownloadWorkerQueue::PushEvent(DownloadEvent event) {
 }
 
 void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
+    std::cout << "[download-worker] start jobId=" << job.jobId << " component='" << job.componentName
+              << "' repoUrl='" << job.repositoryUrl << "' target='" << job.targetDirectory << "'" << std::endl;
     PushEvent({job.jobId, job.componentIndex, DownloadEventType::Started, 0, "Starting"});
 
     const char* home = std::getenv("HOME");
     if (!home) {
+        std::cerr << "[download-worker] jobId=" << job.jobId << " failed: HOME not set" << std::endl;
         PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, "Missing HOME environment"});
         return;
     }
@@ -144,9 +162,14 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
     std::string credentialError;
     const std::string settingsPath = std::string(home) + "/.m2/settings.xml";
     if (!credentials.LoadFromM2SettingsXml(settingsPath, credentialError)) {
+        std::cerr << "[download-worker] jobId=" << job.jobId << " auth load failed: " << credentialError
+                  << std::endl;
         PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, credentialError});
         return;
     }
+
+    std::cout << "[download-worker] jobId=" << job.jobId << " using m2 settings: " << settingsPath
+              << std::endl;
 
     NexusClient client(std::move(credentials));
     std::string error;
@@ -159,19 +182,25 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
         job.targetDirectory,
         cancelAllRequested_,
         [this, &job](int percent, const std::string& message) {
+            std::cout << "[download-worker] progress jobId=" << job.jobId << " percent=" << percent
+                      << " message='" << message << "'" << std::endl;
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Progress, percent, message});
         },
         error);
 
     if (!ok) {
         if (cancelAllRequested_.load()) {
+            std::cout << "[download-worker] cancelled jobId=" << job.jobId << std::endl;
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Cancelled, 0, "Cancelled"});
         } else {
+            std::cerr << "[download-worker] failed jobId=" << job.jobId << " error='" << error << "'"
+                      << std::endl;
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, error});
         }
         return;
     }
 
+    std::cout << "[download-worker] completed jobId=" << job.jobId << std::endl;
     PushEvent({job.jobId, job.componentIndex, DownloadEventType::Completed, 100, "Completed"});
 }
 
