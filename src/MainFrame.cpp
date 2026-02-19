@@ -1,6 +1,7 @@
 #include "MainFrame.h"
 
 #include "ConfigLoader.h"
+#include "DownloadProgressDialog.h"
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
@@ -13,10 +14,16 @@
 #include <wx/statbox.h>
 #include <wx/stattext.h>
 
+#include <cstdint>
+
 namespace {
 
 constexpr int kIdLoadConfig = wxID_HIGHEST + 1;
 constexpr int kIdApply = wxID_HIGHEST + 2;
+constexpr int kSectionLabelWidth = 64;
+constexpr int kFieldLabelWidth = 72;
+constexpr int kSourceFieldWidth = 300;
+constexpr int kArtifactFieldWidth = 170;
 
 bool HasSource(const confy::ComponentConfig& component) {
     return component.source.enabled || !component.source.url.empty() ||
@@ -91,25 +98,36 @@ void MainFrame::OnLoadConfig(wxCommandEvent&) {
 }
 
 void MainFrame::OnApply(wxCommandEvent&) {
-    std::size_t sourceEnabled = 0;
-    std::size_t artifactEnabled = 0;
-    for (const auto& component : config_.components) {
-        if (HasSource(component) && component.source.enabled) {
-            ++sourceEnabled;
+    std::vector<NexusDownloadJob> jobs;
+    jobs.reserve(config_.components.size());
+
+    static std::uint64_t nextJobId = 1;
+
+    for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        const auto& component = config_.components[i];
+        if (!HasArtifact(component) || !component.artifact.enabled) {
+            continue;
         }
-        if (HasArtifact(component) && component.artifact.enabled) {
-            ++artifactEnabled;
-        }
+
+        NexusDownloadJob job;
+        job.jobId = nextJobId++;
+        job.componentIndex = i;
+        job.componentName = component.displayName.empty() ? component.name : component.displayName;
+        job.repositoryUrl = component.artifact.url;
+        job.version = component.artifact.version;
+        job.buildType = component.artifact.buildType;
+        job.targetDirectory = config_.rootPath + "/" + component.path;
+
+        jobs.push_back(std::move(job));
     }
 
-    wxMessageBox(
-        wxString::Format("Ready to apply:\n- Source downloads: %zu\n- Artifact downloads: %zu\n\nTarget: %s",
-                         sourceEnabled,
-                         artifactEnabled,
-                         config_.rootPath),
-        "Apply Preview",
-        wxOK | wxICON_INFORMATION,
-        this);
+    if (jobs.empty()) {
+        wxMessageBox("No artifact download jobs are enabled.", "Nothing to download", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    DownloadProgressDialog dialog(this, std::move(jobs));
+    dialog.ShowModal();
 }
 
 void MainFrame::RenderConfig() {
@@ -140,25 +158,36 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
     auto* detailsSizer = new wxBoxSizer(wxVERTICAL);
 
+    auto makeFixedLabel = [this](const wxString& text, int width) {
+        auto* label = new wxStaticText(componentScroll_, wxID_ANY, text);
+        label->SetMinSize(wxSize(width, -1));
+        return label;
+    };
+
     auto* sourceRow = new wxBoxSizer(wxHORIZONTAL);
-    sourceRow->Add(new wxStaticText(componentScroll_, wxID_ANY, "Source"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+    sourceRow->Add(makeFixedLabel("Source", kSectionLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
     auto* sourceEnabled = new wxCheckBox(componentScroll_, wxID_ANY, "Enable");
     sourceRow->Add(sourceEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-    sourceRow->Add(new wxStaticText(componentScroll_, wxID_ANY, "Branch/Tag"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+    sourceRow->Add(makeFixedLabel("Branch/Tag", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* sourceBranch = new wxComboBox(componentScroll_, wxID_ANY);
-    sourceRow->Add(sourceBranch, 1, wxALIGN_CENTER_VERTICAL);
+    sourceBranch->SetMinSize(wxSize(kSourceFieldWidth, -1));
+    sourceRow->Add(sourceBranch, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 0);
+    sourceRow->AddStretchSpacer();
     detailsSizer->Add(sourceRow, 0, wxEXPAND | wxBOTTOM, 6);
 
     auto* artifactRow = new wxBoxSizer(wxHORIZONTAL);
-    artifactRow->Add(new wxStaticText(componentScroll_, wxID_ANY, "Artifact"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+    artifactRow->Add(makeFixedLabel("Artifact", kSectionLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
     auto* artifactEnabled = new wxCheckBox(componentScroll_, wxID_ANY, "Enable");
     artifactRow->Add(artifactEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-    artifactRow->Add(new wxStaticText(componentScroll_, wxID_ANY, "Version"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+    artifactRow->Add(makeFixedLabel("Version", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* artifactVersion = new wxComboBox(componentScroll_, wxID_ANY);
-    artifactRow->Add(artifactVersion, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-    artifactRow->Add(new wxStaticText(componentScroll_, wxID_ANY, "Build"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+    artifactVersion->SetMinSize(wxSize(kArtifactFieldWidth, -1));
+    artifactRow->Add(artifactVersion, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+    artifactRow->Add(makeFixedLabel("Build", 44), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* artifactBuildType = new wxComboBox(componentScroll_, wxID_ANY);
-    artifactRow->Add(artifactBuildType, 1, wxALIGN_CENTER_VERTICAL);
+    artifactBuildType->SetMinSize(wxSize(kArtifactFieldWidth, -1));
+    artifactRow->Add(artifactBuildType, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 0);
+    artifactRow->AddStretchSpacer();
     detailsSizer->Add(artifactRow, 0, wxEXPAND);
 
     rowBox->Add(detailsSizer, 1, wxEXPAND);

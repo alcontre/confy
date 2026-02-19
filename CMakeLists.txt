@@ -12,6 +12,10 @@ set(CONFY_SOURCES
     src/App.cpp
     src/MainFrame.cpp
     src/ConfigLoader.cpp
+    src/DownloadWorkerQueue.cpp
+    src/DownloadProgressDialog.cpp
+    src/NexusClient.cpp
+    src/AuthCredentials.cpp
 )
 
 set(CONFY_HEADERS
@@ -19,14 +23,20 @@ set(CONFY_HEADERS
     src/MainFrame.h
     src/ConfigModel.h
     src/ConfigLoader.h
+    src/JobTypes.h
+    src/DownloadWorkerQueue.h
+    src/DownloadProgressDialog.h
+    src/NexusClient.h
+    src/AuthCredentials.h
 )
 
 find_package(wxWidgets REQUIRED COMPONENTS core base)
+find_package(CURL REQUIRED)
 include(${wxWidgets_USE_FILE})
 
 add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
 target_include_directories(confy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml)
-target_link_libraries(confy PRIVATE ${wxWidgets_LIBRARIES})
+target_link_libraries(confy PRIVATE ${wxWidgets_LIBRARIES} CURL::libcurl)
 
 add_executable(confy_parser_smoke
     tests/ParserSmokeTest.cpp
@@ -37,10 +47,24 @@ target_include_directories(confy_parser_smoke PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
 )
 
+add_executable(confy_auth_credentials_test
+    tests/AuthCredentialsTest.cpp
+    src/AuthCredentials.cpp
+)
+target_include_directories(confy_auth_credentials_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+)
+
 enable_testing()
 add_test(
     NAME parser_smoke
     COMMAND confy_parser_smoke ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.sample.xml
+)
+
+add_test(
+    NAME auth_credentials
+    COMMAND confy_auth_credentials_test
 )
 
 if(MSVC)

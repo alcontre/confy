@@ -14,7 +14,7 @@
             </Source>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/my-raw-repository</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>myProduct</version>
                 <buildtype>Debug</buildtype>
                 <script>post_artifact.sh</script>
@@ -37,7 +37,7 @@
             <Path>componentC</Path>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/my-raw-repository</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>2.1.0</version>
                 <buildtype>Release</buildtype>
                 <script>post_artifact_01.sh</script>
@@ -55,7 +55,7 @@
             </Source>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/platform</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>9.0.0</version>
                 <buildtype>Debug</buildtype>
                 <script>post_platform_core_artifact.sh</script>
@@ -84,7 +84,7 @@
             </Source>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/service-bus</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>2.3.7</version>
                 <buildtype>RelWithDebInfo</buildtype>
                 <script>post_service_bus_artifact.sh</script>
@@ -96,7 +96,7 @@
             <Path>componentG</Path>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/agent-tools</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>1.5.4</version>
                 <buildtype>Release</buildtype>
                 <script></script>
@@ -125,7 +125,7 @@
             </Source>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/benchmark</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>3.0.1</version>
                 <buildtype>Release</buildtype>
                 <script>post_benchmark.sh</script>
@@ -137,7 +137,7 @@
             <Path>componentJ</Path>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/docs</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>2026.02</version>
                 <buildtype>Release</buildtype>
                 <script>post_docs.sh</script>
@@ -155,7 +155,7 @@
             </Source>
             <Artifact>
                 <IsEnabled/>
-                <url>https://nexus.example.com/repository/sim-engine</url>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>5.4.0</version>
                 <buildtype>Debug</buildtype>
                 <script>post_sim_artifact.sh</script>
