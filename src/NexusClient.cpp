@@ -259,7 +259,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         std::string downloadError;
         std::cout << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
                   << "'" << std::endl;
-        if (!HttpDownloadBinary(BuildAuthUrl(matched.asset.downloadUrl, creds), outputPath.string(), downloadError)) {
+        if (!HttpDownloadBinary(matched.asset.downloadUrl, creds, outputPath.string(), downloadError)) {
             errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
             std::cerr << "[nexus] download failed path='" << matched.asset.path << "' error='" << downloadError
                       << "'" << std::endl;
@@ -318,7 +318,7 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
         std::cout << "[nexus] list assets url='" << url << "'" << std::endl;
 
         std::string responseBody;
-        if (!HttpGetText(BuildAuthUrl(url, creds), responseBody, errorMessage)) {
+        if (!HttpGetText(url, creds, responseBody, errorMessage)) {
             std::cerr << "[nexus] list assets request failed: " << errorMessage << std::endl;
             return false;
         }
@@ -368,7 +368,8 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
     return true;
 }
 
-bool NexusClient::HttpGetText(const std::string& urlWithAuth,
+bool NexusClient::HttpGetText(const std::string& url,
+                              const ServerCredentials& creds,
                               std::string& out,
                               std::string& errorMessage) const {
     CURL* curl = curl_easy_init();
@@ -378,8 +379,10 @@ bool NexusClient::HttpGetText(const std::string& urlWithAuth,
     }
 
     out.clear();
-    const std::string requestUrl = EncodeUrlForCurl(urlWithAuth);
+    const std::string requestUrl = EncodeUrlForCurl(url);
+    const std::string userPwd = BuildCurlUserPwd(creds);
     curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToString);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
@@ -405,7 +408,8 @@ bool NexusClient::HttpGetText(const std::string& urlWithAuth,
     return true;
 }
 
-bool NexusClient::HttpDownloadBinary(const std::string& urlWithAuth,
+bool NexusClient::HttpDownloadBinary(const std::string& url,
+                                     const ServerCredentials& creds,
                                      const std::string& outFile,
                                      std::string& errorMessage) const {
     std::ofstream output(outFile, std::ios::binary);
@@ -421,8 +425,10 @@ bool NexusClient::HttpDownloadBinary(const std::string& urlWithAuth,
         return false;
     }
 
-    const std::string requestUrl = EncodeUrlForCurl(urlWithAuth);
+    const std::string requestUrl = EncodeUrlForCurl(url);
+    const std::string userPwd = BuildCurlUserPwd(creds);
     curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToFile);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
@@ -454,17 +460,6 @@ bool NexusClient::HttpDownloadBinary(const std::string& urlWithAuth,
     }
 
     return true;
-}
-
-std::string NexusClient::BuildAuthUrl(const std::string& url, const ServerCredentials& creds) const {
-    const auto schemePos = url.find("://");
-    if (schemePos == std::string::npos) {
-        return url;
-    }
-
-    const auto prefix = url.substr(0, schemePos + 3);
-    const auto suffix = url.substr(schemePos + 3);
-    return prefix + UrlEncode(creds.username) + ":" + UrlEncode(creds.password) + "@" + suffix;
 }
 
 }  // namespace confy
