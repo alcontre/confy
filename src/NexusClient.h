@@ -28,6 +28,9 @@ public:
                               std::atomic<bool>& cancelRequested,
                               ProgressCallback progress,
                               std::string& errorMessage) const;
+    static std::string BuildCurlUserPwd(const ServerCredentials& creds) {
+        return creds.username + ":" + creds.password;
+    }
 
 private:
     struct RepoInfo {
@@ -42,12 +45,14 @@ private:
                     const std::string& query,
                     std::vector<NexusArtifactAsset>& out,
                     std::string& errorMessage) const;
-    bool HttpGetText(const std::string& urlWithAuth, std::string& out, std::string& errorMessage) const;
-    bool HttpDownloadBinary(const std::string& urlWithAuth,
+    bool HttpGetText(const std::string& url,
+                     const ServerCredentials& creds,
+                     std::string& out,
+                     std::string& errorMessage) const;
+    bool HttpDownloadBinary(const std::string& url,
+                            const ServerCredentials& creds,
                             const std::string& outFile,
                             std::string& errorMessage) const;
-    std::string BuildAuthUrl(const std::string& url, const ServerCredentials& creds) const;
-
     AuthCredentials credentials_;
 };
 
