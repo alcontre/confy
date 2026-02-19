@@ -1,0 +1,30 @@
+<Config>
+    <version>9</version>
+    <path>/tmp/confy-downloads</path>
+    <components>
+        <Component>
+            <name>rma</name>
+            <DisplayName>rma</DisplayName>
+            <Path>rma</Path>
+            <Artifact>
+                <IsEnabled/>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
+                <version>v1.0.0</version>
+                <buildtype>mattress</buildtype>
+                <script></script>
+            </Artifact>
+        </Component>
+        <Component>
+            <name>tool</name>
+            <DisplayName>tool</DisplayName>
+            <Path>tool</Path>
+            <Artifact>
+                <IsEnabled/>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
+                <version>v1.2.3</version>
+                <buildtype>release</buildtype>
+                <script></script>
+            </Artifact>
+        </Component>
+    </components>
+</Config>
