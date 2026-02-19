@@ -1,17 +1,19 @@
 #include "NexusClient.h"
 
 #include <curl/curl.h>
-#include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace fs = std::filesystem;
-using json = nlohmann::json;
 
 namespace {
 
@@ -117,6 +119,143 @@ std::string EncodeUrlForCurl(const std::string& rawUrl) {
     return encoded;
 }
 
+std::string DecodePercentEncoding(const std::string& value) {
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        const char ch = value[i];
+        if (ch == '%' && i + 2 < value.size() && std::isxdigit(static_cast<unsigned char>(value[i + 1])) &&
+            std::isxdigit(static_cast<unsigned char>(value[i + 2]))) {
+            const auto hi = static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(value[i + 1])));
+            const auto lo = static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(value[i + 2])));
+            const auto nibble = [](unsigned char c) -> unsigned char {
+                if (c >= '0' && c <= '9') {
+                    return static_cast<unsigned char>(c - '0');
+                }
+                return static_cast<unsigned char>(10 + (c - 'A'));
+            };
+            decoded.push_back(static_cast<char>((nibble(hi) << 4) | nibble(lo)));
+            i += 2;
+            continue;
+        }
+        decoded.push_back(ch);
+    }
+    return decoded;
+}
+
+std::string EncodePath(const std::string& path) {
+    std::string encoded;
+    encoded.reserve(path.size());
+    for (unsigned char c : path) {
+        if (c == '/') {
+            encoded.push_back('/');
+        } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                   c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded.push_back(static_cast<char>(c));
+        } else {
+            constexpr char kHex[] = "0123456789ABCDEF";
+            encoded.push_back('%');
+            encoded.push_back(kHex[(c >> 4) & 0x0F]);
+            encoded.push_back(kHex[c & 0x0F]);
+        }
+    }
+    return encoded;
+}
+
+std::string TrimFragmentAndQuery(const std::string& href) {
+    const auto queryPos = href.find('?');
+    const auto fragmentPos = href.find('#');
+    const auto cutPos = std::min(queryPos == std::string::npos ? href.size() : queryPos,
+                                 fragmentPos == std::string::npos ? href.size() : fragmentPos);
+    return href.substr(0, cutPos);
+}
+
+std::string NormalizeDirectoryPath(std::string path) {
+    while (!path.empty() && path.front() == '/') {
+        path.erase(path.begin());
+    }
+    if (!path.empty() && path.back() != '/') {
+        path.push_back('/');
+    }
+    return path;
+}
+
+std::string NormalizeFilePath(std::string path) {
+    while (!path.empty() && path.front() == '/') {
+        path.erase(path.begin());
+    }
+    while (!path.empty() && path.back() == '/') {
+        path.pop_back();
+    }
+    return path;
+}
+
+bool ContainsParentTraversal(const std::string& path) {
+    std::size_t start = 0;
+    while (start <= path.size()) {
+        const auto end = path.find('/', start);
+        const auto segment = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (segment == "..") {
+            return true;
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
+std::vector<std::string> ExtractHrefValues(const std::string& html) {
+    static const std::regex hrefPattern(R"(href\s*=\s*["']([^"']+)["'])", std::regex::icase);
+    std::vector<std::string> hrefs;
+    for (std::sregex_iterator it(html.begin(), html.end(), hrefPattern), end; it != end; ++it) {
+        hrefs.push_back((*it)[1].str());
+    }
+    return hrefs;
+}
+
+bool ExtractPathFromHref(const std::string& href,
+                         const std::string& baseUrl,
+                         const std::string& repository,
+                         std::string& outPath,
+                         bool& isDirectory) {
+    std::string value = TrimFragmentAndQuery(href);
+    if (value.empty() || value == "." || value == "./" || value == ".." || value == "../") {
+        return false;
+    }
+
+    const auto browsePrefix = "/service/rest/repository/browse/" + repository + "/";
+    const auto repositoryPrefix = "/repository/" + repository + "/";
+    const auto browseAbsolute = baseUrl + browsePrefix;
+    const auto repositoryAbsolute = baseUrl + repositoryPrefix;
+
+    if (value.rfind(browseAbsolute, 0) == 0) {
+        value = value.substr(browseAbsolute.size());
+        isDirectory = !value.empty() && value.back() == '/';
+    } else if (value.rfind(repositoryAbsolute, 0) == 0) {
+        value = value.substr(repositoryAbsolute.size());
+        isDirectory = false;
+    } else if (value.rfind(browsePrefix, 0) == 0) {
+        value = value.substr(browsePrefix.size());
+        isDirectory = !value.empty() && value.back() == '/';
+    } else if (value.rfind(repositoryPrefix, 0) == 0) {
+        value = value.substr(repositoryPrefix.size());
+        isDirectory = false;
+    } else if (value.find("://") != std::string::npos || value.rfind('/', 0) == 0) {
+        return false;
+    } else {
+        isDirectory = !value.empty() && value.back() == '/';
+    }
+
+    value = DecodePercentEncoding(value);
+    if (ContainsParentTraversal(value)) {
+        return false;
+    }
+    outPath = isDirectory ? NormalizeDirectoryPath(value) : NormalizeFilePath(value);
+    return !outPath.empty();
+}
+
 }  // namespace
 
 namespace confy {
@@ -211,25 +350,6 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
               << std::endl;
 
     if (matches.empty()) {
-        std::cout << "[nexus] no matches from query-scoped listing, retrying with full repository listing"
-                  << std::endl;
-
-        assets.clear();
-        if (!ListAssets(repo, creds, {}, assets, errorMessage)) {
-            std::cerr << "[nexus] fallback list assets failed: " << errorMessage << std::endl;
-            return false;
-        }
-
-        matches.clear();
-        for (const auto& asset : assets) {
-            std::string relativePath;
-            if (extractRelativePath(asset.path, relativePath)) {
-                matches.push_back({asset, relativePath});
-            }
-        }
-    }
-
-    if (matches.empty()) {
         errorMessage = "No assets found for path prefix: " + prefix;
         for (const auto& asset : assets) {
             std::cout << "[nexus] candidate asset path='" << asset.path << "'" << std::endl;
@@ -304,66 +424,56 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
                              const std::string& query,
                              std::vector<NexusArtifactAsset>& out,
                              std::string& errorMessage) const {
-    std::string continuation;
+    const std::string startDirectory = NormalizeDirectoryPath(query);
+    std::vector<std::string> directories{startDirectory};
+    std::unordered_set<std::string> visitedDirectories;
+    std::unordered_set<std::string> seenFiles;
 
-    do {
-        std::string url = repo.baseUrl + "/service/rest/v1/search/assets?repository=" + UrlEncode(repo.repository);
-        if (!query.empty()) {
-            url += "&q=" + UrlEncode(query);
-        }
-        if (!continuation.empty()) {
-            url += "&continuationToken=" + UrlEncode(continuation);
+    while (!directories.empty()) {
+        const std::string currentDirectory = directories.back();
+        directories.pop_back();
+
+        if (!visitedDirectories.insert(currentDirectory).second) {
+            continue;
         }
 
-        std::cout << "[nexus] list assets url='" << url << "'" << std::endl;
+        std::string browseUrl = repo.baseUrl + "/service/rest/repository/browse/" + UrlEncode(repo.repository) + "/";
+        if (!currentDirectory.empty()) {
+            browseUrl += EncodePath(currentDirectory);
+        }
+
+        std::cout << "[nexus] browse listing url='" << browseUrl << "'" << std::endl;
 
         std::string responseBody;
-        if (!HttpGetText(url, creds, responseBody, errorMessage)) {
-            std::cerr << "[nexus] list assets request failed: " << errorMessage << std::endl;
+        if (!HttpGetText(BuildAuthUrl(browseUrl, creds), responseBody, errorMessage)) {
+            std::cerr << "[nexus] browse listing request failed: " << errorMessage << std::endl;
             return false;
         }
 
-        std::cout << "[nexus] list assets response bytes=" << responseBody.size() << std::endl;
+        std::size_t discovered = 0;
+        for (const auto& href : ExtractHrefValues(responseBody)) {
+            std::string resolvedPath;
+            bool isDirectory = false;
+            if (!ExtractPathFromHref(href, repo.baseUrl, repo.repository, resolvedPath, isDirectory)) {
+                continue;
+            }
 
-        json parsedJson;
-        try {
-            parsedJson = json::parse(responseBody);
-        } catch (const std::exception& ex) {
-            errorMessage = std::string("Failed to parse Nexus JSON response: ") + ex.what();
-            std::cerr << "[nexus] JSON parse failed: " << errorMessage << std::endl;
-            return false;
-        }
+            if (href.find("://") == std::string::npos && href.rfind('/', 0) != 0) {
+                resolvedPath = isDirectory ? NormalizeDirectoryPath(currentDirectory + resolvedPath)
+                                           : NormalizeFilePath(currentDirectory + resolvedPath);
+            }
 
-        std::size_t pageAssets = 0;
-        if (parsedJson.contains("items") && parsedJson["items"].is_array()) {
-            for (const auto& item : parsedJson["items"]) {
-                if (!item.is_object()) {
-                    continue;
-                }
-                if (!item.contains("path") || !item["path"].is_string()) {
-                    continue;
-                }
-                if (!item.contains("downloadUrl") || !item["downloadUrl"].is_string()) {
-                    continue;
-                }
-
-                out.push_back({item["path"].get<std::string>(), item["downloadUrl"].get<std::string>()});
-                ++pageAssets;
+            if (isDirectory) {
+                directories.push_back(resolvedPath);
+            } else if (seenFiles.insert(resolvedPath).second) {
+                out.push_back({resolvedPath, repo.baseUrl + "/repository/" + repo.repository + "/" +
+                                                 EncodePath(resolvedPath)});
+                ++discovered;
             }
         }
 
-        std::cout << "[nexus] parsed assets this page count=" << pageAssets << std::endl;
-
-        if (parsedJson.contains("continuationToken") && !parsedJson["continuationToken"].is_null()) {
-            if (parsedJson["continuationToken"].is_string()) {
-                continuation = parsedJson["continuationToken"].get<std::string>();
-            } else {
-                continuation.clear();
-            }
-        } else {
-            continuation.clear();
-        }
-    } while (!continuation.empty());
+        std::cout << "[nexus] browse listing discovered files=" << discovered << std::endl;
+    }
 
     return true;
 }
