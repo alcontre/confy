@@ -1,0 +1,38 @@
+name: Windows Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build:
+    runs-on: windows-2019
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install libcurl via vcpkg
+        run: vcpkg install curl:x64-windows
+
+      - name: Configure
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -A x64
+
+      - name: Build
+        run: cmake --build build --config Release -- /m
+
+      - name: Run tests
+        working-directory: build
+        run: ctest -C Release --output-on-failure
+        env:
+          PATH: "${{ env.VCPKG_INSTALLATION_ROOT }}\\installed\\x64-windows\\bin;${{ env.PATH }}"

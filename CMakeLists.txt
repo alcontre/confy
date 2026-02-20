@@ -48,7 +48,7 @@ set(wxBUILD_PRECOMP OFF)
 set(wxUSE_LIBTIFF OFF)
 add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
 
-add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
+add_executable(confy WIN32 ${CONFY_SOURCES} ${CONFY_HEADERS})
 target_include_directories(confy PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/single_include
