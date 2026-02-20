@@ -30,16 +30,24 @@ set(CONFY_HEADERS
     src/AuthCredentials.h
 )
 
-find_package(wxWidgets REQUIRED COMPONENTS core base)
 find_package(CURL REQUIRED)
-include(${wxWidgets_USE_FILE})
+
+if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/wxWidgets/CMakeLists.txt)
+    message(FATAL_ERROR
+        "wxWidgets submodule not found. Run: git submodule update --init --recursive third_party/wxWidgets")
+endif()
+
+set(wxBUILD_SHARED OFF)
+set(wxBUILD_PRECOMP OFF)
+
+add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
 
 add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
 target_include_directories(confy PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/single_include
 )
-target_link_libraries(confy PRIVATE ${wxWidgets_LIBRARIES} CURL::libcurl)
+target_link_libraries(confy PRIVATE wx::core wx::base CURL::libcurl)
 
 add_executable(confy_parser_smoke
     tests/ParserSmokeTest.cpp
