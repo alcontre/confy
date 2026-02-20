@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -64,6 +65,49 @@ size_t WriteToFile(void* contents, size_t size, size_t nmemb, void* userp) {
     auto* out = static_cast<std::ofstream*>(userp);
     out->write(static_cast<const char*>(contents), static_cast<std::streamsize>(total));
     return total;
+}
+
+struct DownloadProgressContext {
+    std::function<void(std::uint64_t, std::uint64_t)> callback;
+    std::atomic<bool>* cancelRequested{nullptr};
+};
+
+int OnDownloadProgress(void* clientp,
+                       curl_off_t dltotal,
+                       curl_off_t dlnow,
+                       curl_off_t /*ultotal*/,
+                       curl_off_t /*ulnow*/) {
+    auto* ctx = static_cast<DownloadProgressContext*>(clientp);
+    if (ctx == nullptr) {
+        return 0;
+    }
+
+    if (ctx->cancelRequested != nullptr && ctx->cancelRequested->load()) {
+        return 1;
+    }
+
+    if (!ctx->callback) {
+        return 0;
+    }
+
+    const auto safeTotal = dltotal > 0 ? static_cast<std::uint64_t>(dltotal) : 0U;
+    const auto safeNow = dlnow > 0 ? static_cast<std::uint64_t>(dlnow) : 0U;
+    ctx->callback(safeNow, safeTotal);
+    return 0;
+}
+
+std::string FormatDownloadedSize(std::uint64_t bytes) {
+    constexpr std::uint64_t kKB = 1000ULL;
+    constexpr std::uint64_t kMB = 1000ULL * 1000ULL;
+    if (bytes < kMB) {
+        auto roundedKB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kKB));
+        if (bytes > 0 && roundedKB == 0) {
+            roundedKB = 1;
+        }
+        return std::to_string(roundedKB) + " KB";
+    }
+    const auto roundedMB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kMB));
+    return std::to_string(roundedMB) + " MB";
 }
 
 std::string UrlEncode(const std::string& value) {
@@ -488,9 +532,31 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         fs::create_directories(outputPath.parent_path());
 
         std::string downloadError;
+        std::uint64_t currentDownloadedBytes = 0;
         std::cout << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
                   << "'" << std::endl;
-        if (!HttpDownloadBinary(matched.asset.downloadUrl, creds, outputPath.string(), downloadError)) {
+        if (!HttpDownloadBinary(
+                matched.asset.downloadUrl,
+                creds,
+                outputPath.string(),
+                cancelRequested,
+                [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
+                    currentDownloadedBytes = downloadedBytes;
+                    const int filePercent = totalBytes > 0
+                                                ? static_cast<int>((downloadedBytes * 100ULL) / totalBytes)
+                                                : 0;
+                    const double fileProgress = totalBytes > 0
+                                                    ? static_cast<double>(downloadedBytes) /
+                                                          static_cast<double>(totalBytes)
+                                                    : 0.0;
+                    const int overallPercent =
+                        static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
+                                         static_cast<double>(total));
+                    progress(overallPercent,
+                             "Downloading (" + std::to_string(filePercent) + " %) " + matched.asset.path + " (" +
+                                 FormatDownloadedSize(downloadedBytes) + ")");
+                },
+                downloadError)) {
             errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
             std::cerr << "[nexus] download failed path='" << matched.asset.path << "' error='" << downloadError
                       << "'" << std::endl;
@@ -498,8 +564,10 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         }
 
         ++completed;
-        const int percent = static_cast<int>((completed * 100) / total);
-        progress(percent, "Downloading " + matched.asset.path);
+        const int overallPercent = static_cast<int>((completed * 100) / total);
+        progress(overallPercent,
+                 "Downloading (100 %) " + matched.asset.path + " (" +
+                     FormatDownloadedSize(currentDownloadedBytes) + ")");
     }
 
     return true;
@@ -668,6 +736,8 @@ bool NexusClient::HttpGetText(const std::string& url,
 bool NexusClient::HttpDownloadBinary(const std::string& url,
                                      const ServerCredentials& creds,
                                      const std::string& outFile,
+                                     std::atomic<bool>& cancelRequested,
+                                     DownloadProgressCallback progress,
                                      std::string& errorMessage) const {
     std::ofstream output(outFile, std::ios::binary);
     if (!output) {
@@ -684,11 +754,15 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     const std::string requestUrl = EncodeUrlForCurl(url);
     const std::string userPwd = BuildCurlUserPwd(creds);
+    DownloadProgressContext progressContext{progress, &cancelRequested};
     curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToFile);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, OnDownloadProgress);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progressContext);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 
     const CURLcode result = curl_easy_perform(curl);
@@ -696,8 +770,25 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
     curl_easy_cleanup(curl);
 
+    auto deletePartialFile = [outFile]() {
+        std::error_code removeError;
+        fs::remove(outFile, removeError);
+        if (removeError) {
+            std::cerr << "[nexus] failed to remove partial file path='" << outFile
+                      << "' error='" << removeError.message() << "'" << std::endl;
+        }
+    };
+
     if (result != CURLE_OK) {
-        errorMessage = std::string("HTTP download failed: ") + curl_easy_strerror(result);
+        if (cancelRequested.load() && result == CURLE_ABORTED_BY_CALLBACK) {
+            errorMessage = "Download cancelled";
+        } else {
+            errorMessage = std::string("HTTP download failed: ") + curl_easy_strerror(result);
+        }
+        if (output.is_open()) {
+            output.close();
+        }
+        deletePartialFile();
         std::cerr << "[nexus] http download failed path='" << outFile << "' error='" << errorMessage
                   << "'" << std::endl;
         return false;
@@ -705,6 +796,10 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     if (statusCode < 200 || statusCode >= 300) {
         errorMessage = "HTTP status " + std::to_string(statusCode);
+        if (output.is_open()) {
+            output.close();
+        }
+        deletePartialFile();
         std::cerr << "[nexus] http download status=" << statusCode << " path='" << outFile << "'"
                   << std::endl;
         return false;
@@ -712,6 +807,10 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     if (!output.good()) {
         errorMessage = "Unable to write local output file";
+        if (output.is_open()) {
+            output.close();
+        }
+        deletePartialFile();
         std::cerr << "[nexus] write output file failed path='" << outFile << "'" << std::endl;
         return false;
     }

@@ -72,6 +72,7 @@ void DownloadWorkerQueue::Submit(NexusDownloadJob job) {
               << "' version='" << job.version << "' buildType='" << job.buildType << "'" << std::endl;
     {
         std::scoped_lock lock(queueMutex_);
+        cancelAllRequested_.store(false);
         pendingJobs_.push(std::move(job));
     }
     queueCv_.notify_one();
@@ -143,6 +144,13 @@ void DownloadWorkerQueue::WorkerLoop() {
 
 void DownloadWorkerQueue::PushEvent(DownloadEvent event) {
     std::scoped_lock lock(eventMutex_);
+    if (event.type == DownloadEventType::Progress && !events_.empty()) {
+        DownloadEvent& tail = events_.back();
+        if (tail.type == DownloadEventType::Progress && tail.componentIndex == event.componentIndex) {
+            tail = std::move(event);
+            return;
+        }
+    }
     events_.push(std::move(event));
 }
 

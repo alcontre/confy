@@ -9,6 +9,8 @@
 namespace {
 
 constexpr int kTimerId = wxID_HIGHEST + 250;
+constexpr int kStatusLabelWidth = 420;
+constexpr std::size_t kMaxEventsPerTick = 64;
 
 }  // namespace
 
@@ -44,7 +46,8 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         auto* gauge = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(320, -1));
 
         auto* statusLabel = new wxStaticText(this, wxID_ANY, "Queued");
-        statusLabel->SetMinSize(wxSize(120, -1));
+        statusLabel->SetMinSize(wxSize(kStatusLabelWidth, -1));
+        statusLabel->Wrap(kStatusLabelWidth);
 
         auto* detailLabel = new wxStaticText(this, wxID_ANY, "");
         detailLabel->SetMinSize(wxSize(320, -1));
@@ -55,11 +58,11 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         retryButton->Disable();
 
         mainLineSizer->Add(gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-        mainLineSizer->Add(statusLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
         mainLineSizer->Add(retryButton, 0, wxALIGN_CENTER_VERTICAL);
 
         contentSizer->Add(mainLineSizer, 0, wxEXPAND);
-        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 4);
+        contentSizer->Add(statusLabel, 0, wxTOP | wxEXPAND, 4);
+        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 2);
 
         rowSizer->Add(nameLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
         rowSizer->Add(contentSizer, 1, wxEXPAND);
@@ -186,19 +189,28 @@ void DownloadProgressDialog::OnRetryComponent(std::size_t componentIndex) {
 
 void DownloadProgressDialog::ConsumeWorkerEvents() {
     DownloadEvent event;
-    while (worker_.TryPopEvent(event)) {
+    std::size_t processed = 0;
+    while (processed < kMaxEventsPerTick && worker_.TryPopEvent(event)) {
+        ++processed;
         switch (event.type) {
             case DownloadEventType::Started:
                 SetRowState(event.componentIndex, RowState::Running, "Starting", 0);
                 break;
             case DownloadEventType::Progress:
-                SetRowState(event.componentIndex, RowState::Running, "Downloading", event.percent);
+                if (!event.message.empty()) {
+                    SetRowState(event.componentIndex,
+                                RowState::Running,
+                                wxString::FromUTF8(event.message),
+                                event.percent);
+                } else {
+                    SetRowState(event.componentIndex, RowState::Running, "Downloading", event.percent);
+                }
                 break;
             case DownloadEventType::Completed:
                 SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
                 break;
             case DownloadEventType::Cancelled:
-                SetRowState(event.componentIndex, RowState::Cancelled, "Cancelled", 0);
+                SetRowState(event.componentIndex, RowState::Failed, "Cancelled", 0);
                 break;
             case DownloadEventType::Failed:
                 if (!event.message.empty()) {
@@ -238,9 +250,13 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
         return;
     }
 
+    const wxSize previousStatusBestSize = row.statusLabel->GetBestSize();
     row.state = state;
     row.statusLabel->SetLabelText(status);
+    row.statusLabel->Wrap(kStatusLabelWidth);
+    const wxSize currentStatusBestSize = row.statusLabel->GetBestSize();
     row.gauge->SetValue(percent);
+    const bool wasDetailVisible = row.detailLabel->IsShown();
     row.detailLabel->SetLabelText(detail);
     if (detail.empty()) {
         row.detailLabel->Hide();
@@ -249,7 +265,9 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
         row.detailLabel->Show();
     }
     row.retryButton->Enable(state == RowState::Failed && !cancelRequested_);
-    Layout();
+    if (wasDetailVisible != row.detailLabel->IsShown() || previousStatusBestSize != currentStatusBestSize) {
+        Layout();
+    }
 }
 
 void DownloadProgressDialog::QueueRetry(std::size_t componentIndex) {
@@ -293,6 +311,9 @@ bool DownloadProgressDialog::HasFailedJobs() const {
 
 void DownloadProgressDialog::UpdateDialogControls() {
     const bool active = HasActiveJobs();
+    if (!active && cancelRequested_) {
+        cancelRequested_ = false;
+    }
     const bool failed = HasFailedJobs();
 
     for (auto& row : rows_) {
