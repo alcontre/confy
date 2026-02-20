@@ -55,6 +55,7 @@ private:
     bool HttpDownloadBinary(const std::string& url,
                             const ServerCredentials& creds,
                             const std::string& outFile,
+                            std::atomic<bool>& cancelRequested,
                             DownloadProgressCallback progress,
                             std::string& errorMessage) const;
     AuthCredentials credentials_;
