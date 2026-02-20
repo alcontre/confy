@@ -269,8 +269,12 @@ std::vector<std::string> NexusClient::ExtractUniqueFirstPathSegment(
 
     for (const auto& asset : assets) {
         std::string normalized = asset.path;
-        while (!normalized.empty() && normalized.front() == '/') {
-            normalized.erase(normalized.begin());
+        const auto normalizedOffset = normalized.find_first_not_of('/');
+        if (normalizedOffset == std::string::npos) {
+            continue;
+        }
+        if (normalizedOffset > 0) {
+            normalized = normalized.substr(normalizedOffset);
         }
 
         if (normalized.rfind(prefix, 0) != 0) {
@@ -278,8 +282,12 @@ std::vector<std::string> NexusClient::ExtractUniqueFirstPathSegment(
         }
 
         auto remaining = normalized.substr(prefix.size());
-        while (!remaining.empty() && remaining.front() == '/') {
-            remaining.erase(remaining.begin());
+        const auto remainingOffset = remaining.find_first_not_of('/');
+        if (remainingOffset == std::string::npos) {
+            continue;
+        }
+        if (remainingOffset > 0) {
+            remaining = remaining.substr(remainingOffset);
         }
 
         const auto slash = remaining.find('/');

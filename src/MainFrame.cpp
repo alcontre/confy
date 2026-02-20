@@ -16,6 +16,7 @@
 #include <wx/statbox.h>
 #include <wx/stattext.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 
@@ -364,9 +365,7 @@ void MainFrame::EnqueueVersionFetch(std::size_t componentIndex, bool prioritize)
             }
             for (auto it = metadataTasks_.begin(); it != metadataTasks_.end(); ++it) {
                 if (it->type == MetadataTaskType::Versions && it->componentIndex == componentIndex) {
-                    const auto pending = *it;
-                    metadataTasks_.erase(it);
-                    metadataTasks_.push_front(pending);
+                    std::rotate(metadataTasks_.begin(), it, it + 1);
                     break;
                 }
             }
@@ -413,6 +412,9 @@ void MainFrame::EnqueueBuildTypeFetch(std::size_t componentIndex, const std::str
 }
 
 void MainFrame::MetadataWorkerLoop() {
+    const char* home = std::getenv("HOME");
+    const std::string settingsPath = home == nullptr ? "" : std::string(home) + "/.m2/settings.xml";
+
     while (true) {
         MetadataTask task;
         {
@@ -456,14 +458,13 @@ void MainFrame::MetadataWorkerLoop() {
             });
         }
 
-        const char* home = std::getenv("HOME");
-        if (!home) {
+        if (settingsPath.empty()) {
             continue;
         }
 
         AuthCredentials credentials;
         std::string authError;
-        if (!credentials.LoadFromM2SettingsXml(std::string(home) + "/.m2/settings.xml", authError)) {
+        if (!credentials.LoadFromM2SettingsXml(settingsPath, authError)) {
             continue;
         }
 
