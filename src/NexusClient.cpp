@@ -262,6 +262,117 @@ namespace confy {
 
 NexusClient::NexusClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
 
+std::vector<std::string> NexusClient::ExtractImmediateChildDirectories(
+    const std::vector<std::string>& directoryPaths,
+    const std::string& parentPath) {
+    const auto normalizedParent = NormalizeDirectoryPath(parentPath);
+    std::unordered_set<std::string> values;
+
+    for (const auto& directoryPath : directoryPaths) {
+        std::string normalized = directoryPath;
+        const auto normalizedOffset = normalized.find_first_not_of('/');
+        if (normalizedOffset == std::string::npos) {
+            continue;
+        }
+        if (normalizedOffset > 0) {
+            normalized = normalized.substr(normalizedOffset);
+        }
+
+        if (normalized.rfind(normalizedParent, 0) != 0) {
+            continue;
+        }
+
+        auto remaining = normalized.substr(normalizedParent.size());
+        const auto remainingOffset = remaining.find_first_not_of('/');
+        if (remainingOffset == std::string::npos) {
+            continue;
+        }
+        if (remainingOffset > 0) {
+            remaining = remaining.substr(remainingOffset);
+        }
+
+        if (remaining.empty() || remaining.back() != '/') {
+            continue;
+        }
+
+        const auto slash = remaining.find('/');
+        if (slash == std::string::npos || slash == 0) {
+            continue;
+        }
+
+        values.insert(remaining.substr(0, slash));
+    }
+
+    std::vector<std::string> out(values.begin(), values.end());
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
+                                        const std::string& componentName,
+                                        std::vector<std::string>& outVersions,
+                                        std::string& errorMessage) const {
+    std::cout << "[nexus] listing component versions component='" << componentName
+              << "' repoUrl='" << repositoryBrowseUrl << "'" << std::endl;
+    outVersions.clear();
+    RepoInfo repo;
+    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+        return false;
+    }
+
+    ServerCredentials creds;
+    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+        errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+        return false;
+    }
+
+    if (!ListChildDirectories(repo, creds, componentName, outVersions, errorMessage)) {
+        return false;
+    }
+
+    std::cout << "[nexus] discovered versions component='" << componentName
+              << "' count=" << outVersions.size() << std::endl;
+    // Keep per-component version logging bounded to avoid excessive console spam on large repos.
+    constexpr std::size_t kMaxLoggedVersions = 20;
+    const auto toLog = std::min(outVersions.size(), kMaxLoggedVersions);
+    for (std::size_t i = 0; i < toLog; ++i) {
+        const auto& version = outVersions[i];
+        std::cout << "[nexus] discovered version component='" << componentName << "' value='"
+                  << version << "'" << std::endl;
+    }
+    if (outVersions.size() > kMaxLoggedVersions) {
+        std::cout << "[nexus] additional versions omitted component='" << componentName
+                  << "' omittedCount=" << (outVersions.size() - kMaxLoggedVersions) << std::endl;
+    }
+    return true;
+}
+
+bool NexusClient::ListBuildTypes(const std::string& repositoryBrowseUrl,
+                                 const std::string& componentName,
+                                 const std::string& version,
+                                 std::vector<std::string>& outBuildTypes,
+                                 std::string& errorMessage) const {
+    outBuildTypes.clear();
+    RepoInfo repo;
+    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+        return false;
+    }
+
+    ServerCredentials creds;
+    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+        errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+        return false;
+    }
+
+    const auto prefix = componentName + "/" + version;
+    if (!ListChildDirectories(repo, creds, prefix, outBuildTypes, errorMessage)) {
+        return false;
+    }
+    return true;
+}
+
 bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                                        const std::string& componentName,
                                        const std::string& version,
@@ -475,6 +586,42 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
         std::cout << "[nexus] browse listing discovered files=" << discovered << std::endl;
     }
 
+    return true;
+}
+
+bool NexusClient::ListChildDirectories(const RepoInfo& repo,
+                                       const ServerCredentials& creds,
+                                       const std::string& parentPath,
+                                       std::vector<std::string>& out,
+                                       std::string& errorMessage) const {
+    out.clear();
+    const std::string normalizedParent = NormalizeDirectoryPath(parentPath);
+    std::string browseUrl = repo.baseUrl + "/service/rest/repository/browse/" + UrlEncode(repo.repository) + "/";
+    if (!normalizedParent.empty()) {
+        browseUrl += EncodePath(normalizedParent);
+    }
+
+    std::string responseBody;
+    if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
+        return false;
+    }
+
+    std::vector<std::string> directoryPaths;
+    directoryPaths.reserve(32);
+    for (const auto& href : ExtractHrefValues(responseBody)) {
+        std::string resolvedPath;
+        bool isDirectory = false;
+        if (!ExtractPathFromHref(href, repo.baseUrl, repo.repository, resolvedPath, isDirectory) || !isDirectory) {
+            continue;
+        }
+
+        if (href.find("://") == std::string::npos && href.rfind('/', 0) != 0) {
+            resolvedPath = NormalizeDirectoryPath(normalizedParent + resolvedPath);
+        }
+        directoryPaths.push_back(resolvedPath);
+    }
+
+    out = ExtractImmediateChildDirectories(directoryPaths, normalizedParent);
     return true;
 }
 

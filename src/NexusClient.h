@@ -28,6 +28,18 @@ public:
                               std::atomic<bool>& cancelRequested,
                               ProgressCallback progress,
                               std::string& errorMessage) const;
+    bool ListComponentVersions(const std::string& repositoryBrowseUrl,
+                               const std::string& componentName,
+                               std::vector<std::string>& outVersions,
+                               std::string& errorMessage) const;
+    bool ListBuildTypes(const std::string& repositoryBrowseUrl,
+                        const std::string& componentName,
+                        const std::string& version,
+                        std::vector<std::string>& outBuildTypes,
+                        std::string& errorMessage) const;
+    static std::vector<std::string> ExtractImmediateChildDirectories(
+        const std::vector<std::string>& directoryPaths,
+        const std::string& parentPath);
     static std::string BuildCurlUserPwd(const ServerCredentials& creds) {
         return creds.username + ":" + creds.password;
     }
@@ -45,6 +57,11 @@ private:
                     const std::string& query,
                     std::vector<NexusArtifactAsset>& out,
                     std::string& errorMessage) const;
+    bool ListChildDirectories(const RepoInfo& repo,
+                              const ServerCredentials& creds,
+                              const std::string& parentPath,
+                              std::vector<std::string>& out,
+                              std::string& errorMessage) const;
     bool HttpGetText(const std::string& url,
                      const ServerCredentials& creds,
                      std::string& out,

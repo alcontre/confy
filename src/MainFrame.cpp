@@ -1,7 +1,9 @@
 #include "MainFrame.h"
 
+#include "AuthCredentials.h"
 #include "ConfigLoader.h"
 #include "DownloadProgressDialog.h"
+#include "NexusClient.h"
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
@@ -14,7 +16,9 @@
 #include <wx/statbox.h>
 #include <wx/stattext.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 
 namespace {
 
@@ -75,6 +79,10 @@ MainFrame::MainFrame()
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
 }
 
+MainFrame::~MainFrame() {
+    StopMetadataWorkers();
+}
+
 void MainFrame::OnLoadConfig(wxCommandEvent&) {
     wxFileDialog dialog(this,
                         "Open config XML",
@@ -131,12 +139,18 @@ void MainFrame::OnApply(wxCommandEvent&) {
 }
 
 void MainFrame::RenderConfig() {
+    StopMetadataWorkers();
     uiUpdating_ = true;
     componentListSizer_->Clear(true);
     rows_.clear();
     rows_.reserve(config_.components.size());
+    metadataState_.clear();
+    metadataState_.resize(config_.components.size());
+    componentArtifactRequests_.clear();
+    componentArtifactRequests_.resize(config_.components.size());
 
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        componentArtifactRequests_[i] = {config_.components[i].artifact.url, config_.components[i].name};
         AddComponentRow(i);
     }
 
@@ -146,6 +160,13 @@ void MainFrame::RenderConfig() {
 
     statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
     applyButton_->Enable(!config_.components.empty());
+
+    StartMetadataWorkers();
+    for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        if (HasArtifact(config_.components[i]) && !config_.components[i].artifact.url.empty()) {
+            EnqueueVersionFetch(i, false);
+        }
+    }
 }
 
 void MainFrame::AddComponentRow(std::size_t componentIndex) {
@@ -247,6 +268,20 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
         config_.components[componentIndex].artifact.version =
             rows_[componentIndex].artifactVersion->GetValue().ToStdString();
     });
+    row.artifactVersion->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent&) {
+        if (uiUpdating_) {
+            return;
+        }
+        const auto version = rows_[componentIndex].artifactVersion->GetValue().ToStdString();
+        config_.components[componentIndex].artifact.version = version;
+        EnqueueBuildTypeFetch(componentIndex, version);
+    });
+    row.artifactVersion->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, componentIndex](wxCommandEvent&) {
+        if (uiUpdating_) {
+            return;
+        }
+        EnqueueVersionFetch(componentIndex, true);
+    });
 
     row.artifactBuildType->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
         if (uiUpdating_) {
@@ -278,6 +313,240 @@ void MainFrame::RefreshRowEnabledState(std::size_t componentIndex) {
     row.artifactEnabled->SetValue(artifactExists && component.artifact.enabled);
     row.artifactVersion->Enable(artifactExists && component.artifact.enabled);
     row.artifactBuildType->Enable(artifactExists && component.artifact.enabled);
+}
+
+void MainFrame::StartMetadataWorkers() {
+    std::scoped_lock lock(metadataMutex_);
+    if (!metadataWorkers_.empty()) {
+        return;
+    }
+    stopMetadataWorkers_ = false;
+    metadataWorkers_.emplace_back(&MainFrame::MetadataWorkerLoop, this);
+    metadataWorkers_.emplace_back(&MainFrame::MetadataWorkerLoop, this);
+}
+
+void MainFrame::StopMetadataWorkers() {
+    {
+        std::scoped_lock lock(metadataMutex_);
+        stopMetadataWorkers_ = true;
+        metadataTasks_.clear();
+        metadataTaskKeys_.clear();
+    }
+    metadataCv_.notify_all();
+    for (auto& worker : metadataWorkers_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    metadataWorkers_.clear();
+}
+
+void MainFrame::EnqueueVersionFetch(std::size_t componentIndex, bool prioritize) {
+    if (componentIndex >= config_.components.size() || componentIndex >= metadataState_.size()) {
+        return;
+    }
+    if (!HasArtifact(config_.components[componentIndex]) || config_.components[componentIndex].artifact.url.empty()) {
+        return;
+    }
+    if (metadataState_[componentIndex].versionsLoaded) {
+        return;
+    }
+
+    MetadataTask task;
+    task.type = MetadataTaskType::Versions;
+    task.componentIndex = componentIndex;
+    const auto key = "v:" + std::to_string(componentIndex);
+
+    {
+        std::scoped_lock lock(metadataMutex_);
+        if (metadataTaskKeys_.find(key) != metadataTaskKeys_.end()) {
+            if (!prioritize) {
+                return;
+            }
+            for (auto it = metadataTasks_.begin(); it != metadataTasks_.end(); ++it) {
+                if (it->type == MetadataTaskType::Versions && it->componentIndex == componentIndex) {
+                    std::rotate(metadataTasks_.begin(), it, it + 1);
+                    break;
+                }
+            }
+            metadataCv_.notify_one();
+            return;
+        }
+        if (prioritize) {
+            metadataTasks_.push_front(task);
+        } else {
+            metadataTasks_.push_back(task);
+        }
+        metadataTaskKeys_.insert(key);
+    }
+    metadataCv_.notify_one();
+}
+
+void MainFrame::EnqueueBuildTypeFetch(std::size_t componentIndex, const std::string& version) {
+    if (componentIndex >= config_.components.size() || componentIndex >= metadataState_.size() || version.empty()) {
+        return;
+    }
+    if (!HasArtifact(config_.components[componentIndex]) || config_.components[componentIndex].artifact.url.empty()) {
+        return;
+    }
+    auto& state = metadataState_[componentIndex];
+    if (state.buildTypesByVersion.find(version) != state.buildTypesByVersion.end() ||
+        state.buildTypesLoadingVersions.find(version) != state.buildTypesLoadingVersions.end()) {
+        return;
+    }
+
+    MetadataTask task;
+    task.type = MetadataTaskType::BuildTypes;
+    task.componentIndex = componentIndex;
+    task.version = version;
+    const auto key = "b:" + std::to_string(componentIndex) + ":" + version;
+    {
+        std::scoped_lock lock(metadataMutex_);
+        if (metadataTaskKeys_.find(key) != metadataTaskKeys_.end()) {
+            return;
+        }
+        metadataTasks_.push_front(task);
+        metadataTaskKeys_.insert(key);
+    }
+    metadataCv_.notify_one();
+}
+
+void MainFrame::MetadataWorkerLoop() {
+    const char* home = std::getenv("HOME");
+    const std::string settingsPath = home == nullptr ? "" : std::string(home) + "/.m2/settings.xml";
+
+    while (true) {
+        MetadataTask task;
+        {
+            std::unique_lock lock(metadataMutex_);
+            metadataCv_.wait(lock, [this]() { return stopMetadataWorkers_ || !metadataTasks_.empty(); });
+            if (stopMetadataWorkers_) {
+                return;
+            }
+            task = metadataTasks_.front();
+            metadataTasks_.pop_front();
+            if (task.type == MetadataTaskType::Versions) {
+                metadataTaskKeys_.erase("v:" + std::to_string(task.componentIndex));
+            } else {
+                metadataTaskKeys_.erase("b:" + std::to_string(task.componentIndex) + ":" + task.version);
+            }
+        }
+
+        if (task.componentIndex >= componentArtifactRequests_.size()) {
+            continue;
+        }
+        const auto request = componentArtifactRequests_[task.componentIndex];
+        if (request.first.empty() || request.second.empty()) {
+            continue;
+        }
+
+        if (task.componentIndex >= metadataState_.size()) {
+            continue;
+        }
+
+        if (task.type == MetadataTaskType::Versions) {
+            CallAfter([this, index = task.componentIndex]() {
+                if (index < metadataState_.size()) {
+                    metadataState_[index].versionsLoading = true;
+                }
+            });
+        } else {
+            CallAfter([this, index = task.componentIndex, version = task.version]() {
+                if (index < metadataState_.size()) {
+                    metadataState_[index].buildTypesLoadingVersions.insert(version);
+                }
+            });
+        }
+
+        if (settingsPath.empty()) {
+            continue;
+        }
+
+        AuthCredentials credentials;
+        std::string authError;
+        if (!credentials.LoadFromM2SettingsXml(settingsPath, authError)) {
+            continue;
+        }
+
+        NexusClient client(std::move(credentials));
+        std::string errorMessage;
+        if (task.type == MetadataTaskType::Versions) {
+            std::vector<std::string> versions;
+            const auto ok = client.ListComponentVersions(
+                request.first, request.second, versions, errorMessage);
+            CallAfter([this, index = task.componentIndex, versions = std::move(versions), ok]() mutable {
+                if (index >= metadataState_.size() || index >= rows_.size() || index >= config_.components.size()) {
+                    return;
+                }
+
+                auto& state = metadataState_[index];
+                state.versionsLoading = false;
+                state.versionsLoaded = ok;
+                if (!ok) {
+                    return;
+                }
+
+                auto& versionBox = rows_[index].artifactVersion;
+                const auto previousSelection = versionBox->GetValue().ToStdString();
+                uiUpdating_ = true;
+                versionBox->Clear();
+                for (const auto& version : versions) {
+                    versionBox->Append(version);
+                }
+                if (!previousSelection.empty()) {
+                    versionBox->SetValue(previousSelection);
+                } else if (!versions.empty()) {
+                    versionBox->SetValue(versions.front());
+                    config_.components[index].artifact.version = versions.front();
+                }
+                uiUpdating_ = false;
+
+                if (!config_.components[index].artifact.version.empty()) {
+                    EnqueueBuildTypeFetch(index, config_.components[index].artifact.version);
+                }
+            });
+            continue;
+        }
+
+        std::vector<std::string> buildTypes;
+        const auto ok = client.ListBuildTypes(
+            request.first, request.second, task.version, buildTypes, errorMessage);
+        CallAfter([this,
+                   index = task.componentIndex,
+                   version = task.version,
+                   buildTypes = std::move(buildTypes),
+                   ok]() mutable {
+            if (index >= metadataState_.size() || index >= rows_.size() || index >= config_.components.size()) {
+                return;
+            }
+
+            auto& state = metadataState_[index];
+            state.buildTypesLoadingVersions.erase(version);
+            if (!ok) {
+                return;
+            }
+            state.buildTypesByVersion[version] = buildTypes;
+
+            if (config_.components[index].artifact.version != version) {
+                return;
+            }
+
+            auto& buildTypeBox = rows_[index].artifactBuildType;
+            const auto previousSelection = buildTypeBox->GetValue().ToStdString();
+            uiUpdating_ = true;
+            buildTypeBox->Clear();
+            for (const auto& buildType : buildTypes) {
+                buildTypeBox->Append(buildType);
+            }
+            if (!previousSelection.empty()) {
+                buildTypeBox->SetValue(previousSelection);
+            } else if (!buildTypes.empty()) {
+                buildTypeBox->SetValue(buildTypes.front());
+                config_.components[index].artifact.buildType = buildTypes.front();
+            }
+            uiUpdating_ = false;
+        });
+    }
 }
 
 }  // namespace confy
