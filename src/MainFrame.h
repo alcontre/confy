@@ -19,6 +19,7 @@ class wxButton;
 class wxCheckBox;
 class wxComboBox;
 class wxCommandEvent;
+class wxUpdateUIEvent;
 class wxScrolledWindow;
 class wxSizer;
 class wxStaticText;
@@ -41,6 +42,10 @@ private:
 
     void OnLoadConfig(wxCommandEvent& event);
     void OnApply(wxCommandEvent& event);
+    void OnSelectAll(wxCommandEvent& event);
+    void OnDeselectAll(wxCommandEvent& event);
+    void OnUpdateSelectAll(wxUpdateUIEvent& event);
+    void OnUpdateDeselectAll(wxUpdateUIEvent& event);
     void RenderConfig();
     void AddComponentRow(std::size_t componentIndex);
     void RefreshRowEnabledState(std::size_t componentIndex);

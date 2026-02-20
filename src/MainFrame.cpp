@@ -24,20 +24,20 @@ namespace {
 
 constexpr int kIdLoadConfig = wxID_HIGHEST + 1;
 constexpr int kIdApply = wxID_HIGHEST + 2;
+constexpr int kIdDeselectAll = wxID_HIGHEST + 3;
 constexpr int kSectionLabelWidth = 64;
 constexpr int kFieldLabelWidth = 72;
 constexpr int kSourceFieldWidth = 300;
 constexpr int kArtifactFieldWidth = 170;
 
 bool HasSource(const confy::ComponentConfig& component) {
-    return component.source.enabled || !component.source.url.empty() ||
-           !component.source.branchOrTag.empty() || !component.source.script.empty();
+    return !component.source.url.empty() || !component.source.branchOrTag.empty() ||
+        !component.source.script.empty();
 }
 
 bool HasArtifact(const confy::ComponentConfig& component) {
-    return component.artifact.enabled || !component.artifact.url.empty() ||
-           !component.artifact.version.empty() || !component.artifact.buildType.empty() ||
-           !component.artifact.script.empty();
+    return !component.artifact.url.empty() || !component.artifact.version.empty() ||
+        !component.artifact.buildType.empty() || !component.artifact.script.empty();
 }
 
 }  // namespace
@@ -51,8 +51,13 @@ MainFrame::MainFrame()
     fileMenu->AppendSeparator();
     fileMenu->Append(wxID_EXIT, "E&xit");
 
+    auto* editMenu = new wxMenu();
+    editMenu->Append(wxID_SELECTALL, "Select &All");
+    editMenu->Append(kIdDeselectAll, "&Deselect All");
+
     auto* menuBar = new wxMenuBar();
     menuBar->Append(fileMenu, "&File");
+    menuBar->Append(editMenu, "&Edit");
     SetMenuBar(menuBar);
 
     auto* rootSizer = new wxBoxSizer(wxVERTICAL);
@@ -75,7 +80,11 @@ MainFrame::MainFrame()
     SetSizer(rootSizer);
 
     Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
+    Bind(wxEVT_MENU, &MainFrame::OnSelectAll, this, wxID_SELECTALL);
+    Bind(wxEVT_MENU, &MainFrame::OnDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
+    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSelectAll, this, wxID_SELECTALL);
+    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
 }
 
@@ -138,6 +147,43 @@ void MainFrame::OnApply(wxCommandEvent&) {
 
     DownloadProgressDialog dialog(this, std::move(jobs));
     dialog.ShowModal();
+}
+
+void MainFrame::OnSelectAll(wxCommandEvent&) {
+    if (config_.components.empty()) {
+        return;
+    }
+
+    uiUpdating_ = true;
+    for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        auto& component = config_.components[i];
+        component.source.enabled = HasSource(component);
+        component.artifact.enabled = HasArtifact(component);
+        RefreshRowEnabledState(i);
+    }
+    uiUpdating_ = false;
+}
+
+void MainFrame::OnDeselectAll(wxCommandEvent&) {
+    if (config_.components.empty()) {
+        return;
+    }
+
+    uiUpdating_ = true;
+    for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        config_.components[i].source.enabled = false;
+        config_.components[i].artifact.enabled = false;
+        RefreshRowEnabledState(i);
+    }
+    uiUpdating_ = false;
+}
+
+void MainFrame::OnUpdateSelectAll(wxUpdateUIEvent& event) {
+    event.Enable(!config_.components.empty());
+}
+
+void MainFrame::OnUpdateDeselectAll(wxUpdateUIEvent& event) {
+    event.Enable(!config_.components.empty());
 }
 
 void MainFrame::RenderConfig() {
