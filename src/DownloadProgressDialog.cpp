@@ -250,9 +250,11 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
         return;
     }
 
+    const wxSize previousStatusBestSize = row.statusLabel->GetBestSize();
     row.state = state;
     row.statusLabel->SetLabelText(status);
     row.statusLabel->Wrap(kStatusLabelWidth);
+    const wxSize currentStatusBestSize = row.statusLabel->GetBestSize();
     row.gauge->SetValue(percent);
     const bool wasDetailVisible = row.detailLabel->IsShown();
     row.detailLabel->SetLabelText(detail);
@@ -263,7 +265,7 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
         row.detailLabel->Show();
     }
     row.retryButton->Enable(state == RowState::Failed && !cancelRequested_);
-    if (wasDetailVisible != row.detailLabel->IsShown()) {
+    if (wasDetailVisible != row.detailLabel->IsShown() || previousStatusBestSize != currentStatusBestSize) {
         Layout();
     }
 }
