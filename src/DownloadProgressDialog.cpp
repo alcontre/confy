@@ -210,7 +210,7 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
                 SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
                 break;
             case DownloadEventType::Cancelled:
-                SetRowState(event.componentIndex, RowState::Cancelled, "Cancelled", 0);
+                SetRowState(event.componentIndex, RowState::Failed, "Cancelled (can retry)", 0);
                 break;
             case DownloadEventType::Failed:
                 if (!event.message.empty()) {
@@ -311,6 +311,9 @@ bool DownloadProgressDialog::HasFailedJobs() const {
 
 void DownloadProgressDialog::UpdateDialogControls() {
     const bool active = HasActiveJobs();
+    if (!active && cancelRequested_) {
+        cancelRequested_ = false;
+    }
     const bool failed = HasFailedJobs();
 
     for (auto& row : rows_) {
