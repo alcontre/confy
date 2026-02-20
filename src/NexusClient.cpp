@@ -421,14 +421,18 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                 outputPath.string(),
                 [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
                     currentDownloadedBytes = downloadedBytes;
+                    const int filePercent = totalBytes > 0
+                                                ? static_cast<int>((downloadedBytes * 100ULL) / totalBytes)
+                                                : 0;
                     const double fileProgress = totalBytes > 0
                                                     ? static_cast<double>(downloadedBytes) /
                                                           static_cast<double>(totalBytes)
                                                     : 0.0;
-                    const int percent = static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
-                                                         static_cast<double>(total));
-                    progress(percent,
-                             "Downloading (" + std::to_string(percent) + " %) " + matched.asset.path + " (" +
+                    const int overallPercent =
+                        static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
+                                         static_cast<double>(total));
+                    progress(overallPercent,
+                             "Downloading (" + std::to_string(filePercent) + " %) " + matched.asset.path + " (" +
                                  FormatDownloadedSize(downloadedBytes) + ")");
                 },
                 downloadError)) {
@@ -439,9 +443,9 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         }
 
         ++completed;
-        const int percent = static_cast<int>((completed * 100) / total);
-        progress(percent,
-                 "Downloading (" + std::to_string(percent) + " %) " + matched.asset.path + " (" +
+        const int overallPercent = static_cast<int>((completed * 100) / total);
+        progress(overallPercent,
+                 "Downloading (100 %) " + matched.asset.path + " (" +
                      FormatDownloadedSize(currentDownloadedBytes) + ")");
     }
 

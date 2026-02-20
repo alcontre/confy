@@ -143,6 +143,13 @@ void DownloadWorkerQueue::WorkerLoop() {
 
 void DownloadWorkerQueue::PushEvent(DownloadEvent event) {
     std::scoped_lock lock(eventMutex_);
+    if (event.type == DownloadEventType::Progress && !events_.empty()) {
+        DownloadEvent& tail = events_.back();
+        if (tail.type == DownloadEventType::Progress && tail.componentIndex == event.componentIndex) {
+            tail = std::move(event);
+            return;
+        }
+    }
     events_.push(std::move(event));
 }
 
