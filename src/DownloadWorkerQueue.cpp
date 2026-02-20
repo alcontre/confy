@@ -72,6 +72,7 @@ void DownloadWorkerQueue::Submit(NexusDownloadJob job) {
               << "' version='" << job.version << "' buildType='" << job.buildType << "'" << std::endl;
     {
         std::scoped_lock lock(queueMutex_);
+        cancelAllRequested_.store(false);
         pendingJobs_.push(std::move(job));
     }
     queueCv_.notify_one();
