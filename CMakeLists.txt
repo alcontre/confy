@@ -32,14 +32,8 @@ set(CONFY_HEADERS
 
 find_package(CURL REQUIRED)
 
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/wxWidgets/CMakeLists.txt)
-    message(FATAL_ERROR
-        "wxWidgets submodule not found. Run: git submodule update --init --recursive third_party/wxWidgets")
-endif()
-
 set(wxBUILD_SHARED OFF)
 set(wxBUILD_PRECOMP OFF)
-
 add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
 
 add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
