@@ -210,7 +210,7 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
                 SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
                 break;
             case DownloadEventType::Cancelled:
-                SetRowState(event.componentIndex, RowState::Failed, "Cancelled (can retry)", 0);
+                SetRowState(event.componentIndex, RowState::Failed, "Cancelled", 0);
                 break;
             case DownloadEventType::Failed:
                 if (!event.message.empty()) {
