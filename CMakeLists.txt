@@ -66,6 +66,17 @@ target_include_directories(confy_nexus_client_auth_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+add_executable(confy_nexus_client_path_segment_test
+    tests/NexusClientPathSegmentTest.cpp
+    src/NexusClient.cpp
+    src/AuthCredentials.cpp
+)
+target_include_directories(confy_nexus_client_path_segment_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+)
+target_link_libraries(confy_nexus_client_path_segment_test PRIVATE CURL::libcurl)
+
 enable_testing()
 add_test(
     NAME parser_smoke
@@ -80,6 +91,11 @@ add_test(
 add_test(
     NAME nexus_client_auth
     COMMAND confy_nexus_client_auth_test
+)
+
+add_test(
+    NAME nexus_client_path_segment
+    COMMAND confy_nexus_client_path_segment_test
 )
 
 if(MSVC)

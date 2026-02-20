@@ -28,6 +28,18 @@ public:
                               std::atomic<bool>& cancelRequested,
                               ProgressCallback progress,
                               std::string& errorMessage) const;
+    bool ListComponentVersions(const std::string& repositoryBrowseUrl,
+                               const std::string& componentName,
+                               std::vector<std::string>& outVersions,
+                               std::string& errorMessage) const;
+    bool ListBuildTypes(const std::string& repositoryBrowseUrl,
+                        const std::string& componentName,
+                        const std::string& version,
+                        std::vector<std::string>& outBuildTypes,
+                        std::string& errorMessage) const;
+    static std::vector<std::string> ExtractUniqueFirstPathSegment(
+        const std::vector<NexusArtifactAsset>& assets,
+        const std::string& prefix);
     static std::string BuildCurlUserPwd(const ServerCredentials& creds) {
         return creds.username + ":" + creds.password;
     }

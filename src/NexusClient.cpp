@@ -262,6 +262,93 @@ namespace confy {
 
 NexusClient::NexusClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
 
+std::vector<std::string> NexusClient::ExtractUniqueFirstPathSegment(
+    const std::vector<NexusArtifactAsset>& assets,
+    const std::string& prefix) {
+    std::unordered_set<std::string> values;
+
+    for (const auto& asset : assets) {
+        std::string normalized = asset.path;
+        while (!normalized.empty() && normalized.front() == '/') {
+            normalized.erase(normalized.begin());
+        }
+
+        if (normalized.rfind(prefix, 0) != 0) {
+            continue;
+        }
+
+        auto remaining = normalized.substr(prefix.size());
+        while (!remaining.empty() && remaining.front() == '/') {
+            remaining.erase(remaining.begin());
+        }
+
+        const auto slash = remaining.find('/');
+        if (slash == std::string::npos || slash == 0) {
+            continue;
+        }
+
+        values.insert(remaining.substr(0, slash));
+    }
+
+    std::vector<std::string> out(values.begin(), values.end());
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
+                                        const std::string& componentName,
+                                        std::vector<std::string>& outVersions,
+                                        std::string& errorMessage) const {
+    outVersions.clear();
+    RepoInfo repo;
+    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+        return false;
+    }
+
+    ServerCredentials creds;
+    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+        errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+        return false;
+    }
+
+    std::vector<NexusArtifactAsset> assets;
+    if (!ListAssets(repo, creds, componentName, assets, errorMessage)) {
+        return false;
+    }
+
+    outVersions = ExtractUniqueFirstPathSegment(assets, NormalizeDirectoryPath(componentName));
+    return true;
+}
+
+bool NexusClient::ListBuildTypes(const std::string& repositoryBrowseUrl,
+                                 const std::string& componentName,
+                                 const std::string& version,
+                                 std::vector<std::string>& outBuildTypes,
+                                 std::string& errorMessage) const {
+    outBuildTypes.clear();
+    RepoInfo repo;
+    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+        return false;
+    }
+
+    ServerCredentials creds;
+    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+        errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+        return false;
+    }
+
+    std::vector<NexusArtifactAsset> assets;
+    const auto prefix = componentName + "/" + version;
+    if (!ListAssets(repo, creds, prefix, assets, errorMessage)) {
+        return false;
+    }
+
+    outBuildTypes = ExtractUniqueFirstPathSegment(assets, NormalizeDirectoryPath(prefix));
+    return true;
+}
+
 bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                                        const std::string& componentName,
                                        const std::string& version,
