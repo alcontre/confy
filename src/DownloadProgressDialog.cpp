@@ -9,6 +9,7 @@
 namespace {
 
 constexpr int kTimerId = wxID_HIGHEST + 250;
+constexpr int kStatusLabelWidth = 420;
 
 }  // namespace
 
@@ -44,8 +45,8 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         auto* gauge = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(320, -1));
 
         auto* statusLabel = new wxStaticText(this, wxID_ANY, "Queued");
-        statusLabel->SetMinSize(wxSize(420, -1));
-        statusLabel->Wrap(420);
+        statusLabel->SetMinSize(wxSize(kStatusLabelWidth, -1));
+        statusLabel->Wrap(kStatusLabelWidth);
 
         auto* detailLabel = new wxStaticText(this, wxID_ANY, "");
         detailLabel->SetMinSize(wxSize(320, -1));
@@ -248,7 +249,7 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
 
     row.state = state;
     row.statusLabel->SetLabelText(status);
-    row.statusLabel->Wrap(420);
+    row.statusLabel->Wrap(kStatusLabelWidth);
     row.gauge->SetValue(percent);
     row.detailLabel->SetLabelText(detail);
     if (detail.empty()) {

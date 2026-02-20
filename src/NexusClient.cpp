@@ -88,9 +88,17 @@ int OnDownloadProgress(void* clientp,
 }
 
 std::string FormatDownloadedSize(std::uint64_t bytes) {
-    constexpr std::uint64_t kMiB = 1024ULL * 1024ULL;
-    const auto roundedMiB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kMiB));
-    return std::to_string(roundedMiB) + "MB";
+    constexpr std::uint64_t kKB = 1000ULL;
+    constexpr std::uint64_t kMB = 1000ULL * 1000ULL;
+    if (bytes < kMB) {
+        auto roundedKB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kKB));
+        if (bytes > 0 && roundedKB == 0) {
+            roundedKB = 1;
+        }
+        return std::to_string(roundedKB) + " KB";
+    }
+    const auto roundedMB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kMB));
+    return std::to_string(roundedMB) + " MB";
 }
 
 std::string UrlEncode(const std::string& value) {
@@ -580,7 +588,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     const std::string requestUrl = EncodeUrlForCurl(url);
     const std::string userPwd = BuildCurlUserPwd(creds);
-    DownloadProgressContext progressContext{std::move(progress)};
+    DownloadProgressContext progressContext{progress};
     curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
