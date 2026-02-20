@@ -312,6 +312,8 @@ bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
                                         const std::string& componentName,
                                         std::vector<std::string>& outVersions,
                                         std::string& errorMessage) const {
+    std::cout << "[nexus] listing component versions component='" << componentName
+              << "' repoUrl='" << repositoryBrowseUrl << "'" << std::endl;
     outVersions.clear();
     RepoInfo repo;
     if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
@@ -327,6 +329,21 @@ bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
 
     if (!ListChildDirectories(repo, creds, componentName, outVersions, errorMessage)) {
         return false;
+    }
+
+    std::cout << "[nexus] discovered versions component='" << componentName
+              << "' count=" << outVersions.size() << std::endl;
+    // Keep per-component version logging bounded to avoid excessive console spam on large repos.
+    constexpr std::size_t kMaxLoggedVersions = 20;
+    const auto toLog = std::min(outVersions.size(), kMaxLoggedVersions);
+    for (std::size_t i = 0; i < toLog; ++i) {
+        const auto& version = outVersions[i];
+        std::cout << "[nexus] discovered version component='" << componentName << "' value='"
+                  << version << "'" << std::endl;
+    }
+    if (outVersions.size() > kMaxLoggedVersions) {
+        std::cout << "[nexus] additional versions omitted component='" << componentName
+                  << "' omittedCount=" << (outVersions.size() - kMaxLoggedVersions) << std::endl;
     }
     return true;
 }
