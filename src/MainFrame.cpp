@@ -68,7 +68,8 @@ MainFrame::MainFrame()
 
     auto* rootSizer = new wxBoxSizer(wxVERTICAL);
 
-    statusLabel_ = new wxStaticText(this, wxID_ANY, "No config loaded.");
+    statusLabel_ = new wxStaticText(this, wxID_ANY, "");
+    statusLabel_->Hide();
     rootSizer->Add(statusLabel_, 0, wxALL | wxEXPAND, 8);
 
     componentScroll_ = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
@@ -85,10 +86,7 @@ MainFrame::MainFrame()
     buttonFont.MakeLarger();
     loadConfigButton_->SetFont(buttonFont);
     loadConfigButton_->SetMinSize(wxSize(280, 72));
-    emptyStateSizer->Add(loadConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxBOTTOM, 12);
-
-    auto* emptyStateLabel = new wxStaticText(emptyStatePanel_, wxID_ANY, "No config loaded.");
-    emptyStateSizer->Add(emptyStateLabel, 0, wxALIGN_CENTER_HORIZONTAL);
+    emptyStateSizer->Add(loadConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL);
     emptyStateSizer->AddStretchSpacer();
     emptyStatePanel_->SetSizer(emptyStateSizer);
 
@@ -244,12 +242,14 @@ void MainFrame::RenderConfig() {
     uiUpdating_ = false;
 
     statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
+    statusLabel_->Show();
     if (loadedConfigPath_.empty()) {
         SetStatusText("Config: none");
     } else {
         SetStatusText(wxString::Format("Config: %s", loadedConfigPath_));
     }
     applyButton_->Enable(!config_.components.empty());
+    Layout();
 
     StartMetadataWorkers();
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
