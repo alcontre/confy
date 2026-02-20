@@ -44,7 +44,8 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         auto* gauge = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(320, -1));
 
         auto* statusLabel = new wxStaticText(this, wxID_ANY, "Queued");
-        statusLabel->SetMinSize(wxSize(120, -1));
+        statusLabel->SetMinSize(wxSize(420, -1));
+        statusLabel->Wrap(420);
 
         auto* detailLabel = new wxStaticText(this, wxID_ANY, "");
         detailLabel->SetMinSize(wxSize(320, -1));
@@ -55,11 +56,11 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         retryButton->Disable();
 
         mainLineSizer->Add(gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-        mainLineSizer->Add(statusLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
         mainLineSizer->Add(retryButton, 0, wxALIGN_CENTER_VERTICAL);
 
         contentSizer->Add(mainLineSizer, 0, wxEXPAND);
-        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 4);
+        contentSizer->Add(statusLabel, 0, wxTOP | wxEXPAND, 4);
+        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 2);
 
         rowSizer->Add(nameLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
         rowSizer->Add(contentSizer, 1, wxEXPAND);
@@ -192,7 +193,14 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
                 SetRowState(event.componentIndex, RowState::Running, "Starting", 0);
                 break;
             case DownloadEventType::Progress:
-                SetRowState(event.componentIndex, RowState::Running, "Downloading", event.percent);
+                if (!event.message.empty()) {
+                    SetRowState(event.componentIndex,
+                                RowState::Running,
+                                wxString::FromUTF8(event.message),
+                                event.percent);
+                } else {
+                    SetRowState(event.componentIndex, RowState::Running, "Downloading", event.percent);
+                }
                 break;
             case DownloadEventType::Completed:
                 SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
@@ -240,6 +248,7 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
 
     row.state = state;
     row.statusLabel->SetLabelText(status);
+    row.statusLabel->Wrap(420);
     row.gauge->SetValue(percent);
     row.detailLabel->SetLabelText(detail);
     if (detail.empty()) {

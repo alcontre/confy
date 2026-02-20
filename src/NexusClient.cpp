@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -64,6 +65,32 @@ size_t WriteToFile(void* contents, size_t size, size_t nmemb, void* userp) {
     auto* out = static_cast<std::ofstream*>(userp);
     out->write(static_cast<const char*>(contents), static_cast<std::streamsize>(total));
     return total;
+}
+
+struct DownloadProgressContext {
+    std::function<void(std::uint64_t, std::uint64_t)> callback;
+};
+
+int OnDownloadProgress(void* clientp,
+                       curl_off_t dltotal,
+                       curl_off_t dlnow,
+                       curl_off_t /*ultotal*/,
+                       curl_off_t /*ulnow*/) {
+    auto* ctx = static_cast<DownloadProgressContext*>(clientp);
+    if (ctx == nullptr || !ctx->callback) {
+        return 0;
+    }
+
+    const auto safeTotal = dltotal > 0 ? static_cast<std::uint64_t>(dltotal) : 0U;
+    const auto safeNow = dlnow > 0 ? static_cast<std::uint64_t>(dlnow) : 0U;
+    ctx->callback(safeNow, safeTotal);
+    return 0;
+}
+
+std::string FormatDownloadedSize(std::uint64_t bytes) {
+    constexpr std::uint64_t kMiB = 1024ULL * 1024ULL;
+    const auto roundedMiB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kMiB));
+    return std::to_string(roundedMiB) + "MB";
 }
 
 std::string UrlEncode(const std::string& value) {
@@ -379,7 +406,22 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         std::string downloadError;
         std::cout << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
                   << "'" << std::endl;
-        if (!HttpDownloadBinary(matched.asset.downloadUrl, creds, outputPath.string(), downloadError)) {
+        if (!HttpDownloadBinary(
+                matched.asset.downloadUrl,
+                creds,
+                outputPath.string(),
+                [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
+                    const double fileProgress = totalBytes > 0
+                                                    ? static_cast<double>(downloadedBytes) /
+                                                          static_cast<double>(totalBytes)
+                                                    : 0.0;
+                    const int percent = static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
+                                                         static_cast<double>(total));
+                    progress(percent,
+                             "Downloading " + matched.asset.path + " (" +
+                                 FormatDownloadedSize(downloadedBytes) + ")");
+                },
+                downloadError)) {
             errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
             std::cerr << "[nexus] download failed path='" << matched.asset.path << "' error='" << downloadError
                       << "'" << std::endl;
@@ -521,6 +563,7 @@ bool NexusClient::HttpGetText(const std::string& url,
 bool NexusClient::HttpDownloadBinary(const std::string& url,
                                      const ServerCredentials& creds,
                                      const std::string& outFile,
+                                     DownloadProgressCallback progress,
                                      std::string& errorMessage) const {
     std::ofstream output(outFile, std::ios::binary);
     if (!output) {
@@ -537,11 +580,15 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     const std::string requestUrl = EncodeUrlForCurl(url);
     const std::string userPwd = BuildCurlUserPwd(creds);
+    DownloadProgressContext progressContext{std::move(progress)};
     curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToFile);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, OnDownloadProgress);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progressContext);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 
     const CURLcode result = curl_easy_perform(curl);

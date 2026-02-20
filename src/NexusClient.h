@@ -3,6 +3,7 @@
 #include "AuthCredentials.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -33,6 +34,8 @@ public:
     }
 
 private:
+    using DownloadProgressCallback = std::function<void(std::uint64_t downloadedBytes, std::uint64_t totalBytes)>;
+
     struct RepoInfo {
         std::string baseUrl;
         std::string repository;
@@ -52,6 +55,7 @@ private:
     bool HttpDownloadBinary(const std::string& url,
                             const ServerCredentials& creds,
                             const std::string& outFile,
+                            DownloadProgressCallback progress,
                             std::string& errorMessage) const;
     AuthCredentials credentials_;
 };
