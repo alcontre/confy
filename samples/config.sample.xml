@@ -17,6 +17,13 @@
                 <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
                 <version>myProduct</version>
                 <buildtype>Debug</buildtype>
+                <regex-include>
+                    <regex>\.dll$</regex>
+                    <regex>^bin/</regex>
+                </regex-include>
+                <regex-exclude>
+                    <regex>/tests?/</regex>
+                </regex-exclude>
                 <script>post_artifact.sh</script>
             </Artifact>
         </Component>

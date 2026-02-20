@@ -26,6 +26,8 @@ public:
                               const std::string& version,
                               const std::string& buildType,
                               const std::string& targetDirectory,
+                              const std::vector<std::string>& regexIncludes,
+                              const std::vector<std::string>& regexExcludes,
                               std::atomic<bool>& cancelRequested,
                               ProgressCallback progress,
                               std::string& errorMessage) const;

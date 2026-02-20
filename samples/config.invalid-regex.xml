@@ -1,0 +1,20 @@
+<Config>
+    <version>1</version>
+    <path>/tmp/confy-downloads</path>
+    <components>
+        <Component>
+            <name>bad_regex_component</name>
+            <DisplayName>Bad Regex Component</DisplayName>
+            <Path>componentBad</Path>
+            <Artifact>
+                <IsEnabled/>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
+                <version>myProduct</version>
+                <buildtype>Debug</buildtype>
+                <regex-include>
+                    <regex>[abc</regex>
+                </regex-include>
+            </Artifact>
+        </Component>
+    </components>
+</Config>

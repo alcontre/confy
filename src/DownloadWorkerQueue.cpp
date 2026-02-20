@@ -188,6 +188,8 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
         job.version,
         job.buildType,
         job.targetDirectory,
+        job.regexIncludes,
+        job.regexExcludes,
         cancelAllRequested_,
         [this, &job](int percent, const std::string& message) {
             std::cout << "[download-worker] progress jobId=" << job.jobId << " percent=" << percent

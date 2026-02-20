@@ -50,6 +50,15 @@ target_include_directories(confy_parser_smoke PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
 )
 
+add_executable(confy_config_loader_regex_validation_test
+    tests/ConfigLoaderRegexValidationTest.cpp
+    src/ConfigLoader.cpp
+)
+target_include_directories(confy_config_loader_regex_validation_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+)
+
 add_executable(confy_auth_credentials_test
     tests/AuthCredentialsTest.cpp
     src/AuthCredentials.cpp
@@ -81,6 +90,11 @@ enable_testing()
 add_test(
     NAME parser_smoke
     COMMAND confy_parser_smoke ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.sample.xml
+)
+
+add_test(
+    NAME config_loader_regex_validation
+    COMMAND confy_config_loader_regex_validation_test ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.invalid-regex.xml
 )
 
 add_test(

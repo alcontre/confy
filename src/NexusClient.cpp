@@ -422,6 +422,8 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                                        const std::string& version,
                                        const std::string& buildType,
                                        const std::string& targetDirectory,
+                                       const std::vector<std::string>& regexIncludes,
+                                       const std::vector<std::string>& regexExcludes,
                                        std::atomic<bool>& cancelRequested,
                                        ProgressCallback progress,
                                        std::string& errorMessage) const {
@@ -460,7 +462,30 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
     }
 
     std::cout << "[nexus] total assets returned (query='" << prefix << "')=" << assets.size()
-              << std::endl;
+              << " includeFilters=" << regexIncludes.size() << " excludeFilters="
+              << regexExcludes.size() << std::endl;
+
+    std::vector<std::regex> includeRegexes;
+    includeRegexes.reserve(regexIncludes.size());
+    for (const auto& pattern : regexIncludes) {
+        try {
+            includeRegexes.emplace_back(pattern);
+        } catch (const std::regex_error& ex) {
+            errorMessage = "Invalid include regex '" + pattern + "': " + ex.what();
+            return false;
+        }
+    }
+
+    std::vector<std::regex> excludeRegexes;
+    excludeRegexes.reserve(regexExcludes.size());
+    for (const auto& pattern : regexExcludes) {
+        try {
+            excludeRegexes.emplace_back(pattern);
+        } catch (const std::regex_error& ex) {
+            errorMessage = "Invalid exclude regex '" + pattern + "': " + ex.what();
+            return false;
+        }
+    }
     struct MatchedAsset {
         NexusArtifactAsset asset;
         std::string relativePath;
@@ -497,6 +522,32 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
     for (const auto& asset : assets) {
         std::string relativePath;
         if (extractRelativePath(asset.path, relativePath)) {
+            bool includeMatch = includeRegexes.empty();
+            if (!includeMatch) {
+                for (const auto& includeRegex : includeRegexes) {
+                    if (std::regex_search(relativePath, includeRegex)) {
+                        includeMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!includeMatch) {
+                continue;
+            }
+
+            bool excludeMatch = false;
+            for (const auto& excludeRegex : excludeRegexes) {
+                if (std::regex_search(relativePath, excludeRegex)) {
+                    excludeMatch = true;
+                    break;
+                }
+            }
+
+            if (excludeMatch) {
+                continue;
+            }
+
             matches.push_back({asset, relativePath});
         }
     }

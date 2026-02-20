@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace confy {
 
@@ -13,6 +14,8 @@ struct NexusDownloadJob {
     std::string version;
     std::string buildType;
     std::string targetDirectory;
+    std::vector<std::string> regexIncludes;
+    std::vector<std::string> regexExcludes;
 };
 
 enum class DownloadEventType {

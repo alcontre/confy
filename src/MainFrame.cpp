@@ -125,6 +125,8 @@ void MainFrame::OnApply(wxCommandEvent&) {
         job.version = component.artifact.version;
         job.buildType = component.artifact.buildType;
         job.targetDirectory = config_.rootPath + "/" + component.path;
+        job.regexIncludes = component.artifact.regexIncludes;
+        job.regexExcludes = component.artifact.regexExcludes;
 
         jobs.push_back(std::move(job));
     }

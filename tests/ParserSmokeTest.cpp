@@ -42,6 +42,11 @@ int main(int argc, char** argv) {
     if (!Check(first.artifact.enabled, "First artifact should be enabled")) return 1;
     if (!Check(first.source.branchOrTag == "master", "First source branch mismatch")) return 1;
     if (!Check(first.artifact.buildType == "Debug", "First artifact buildtype mismatch")) return 1;
+    if (!Check(first.artifact.regexIncludes.size() == 2, "First artifact include regex count mismatch")) return 1;
+    if (!Check(first.artifact.regexIncludes[0] == "\\.dll$", "First include regex[0] mismatch")) return 1;
+    if (!Check(first.artifact.regexIncludes[1] == "^bin/", "First include regex[1] mismatch")) return 1;
+    if (!Check(first.artifact.regexExcludes.size() == 1, "First artifact exclude regex count mismatch")) return 1;
+    if (!Check(first.artifact.regexExcludes[0] == "/tests?/", "First exclude regex mismatch")) return 1;
 
     const auto& second = model.components[1];
     if (!Check(second.name == "only_source", "Second component name mismatch")) return 1;

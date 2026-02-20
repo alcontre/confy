@@ -18,6 +18,8 @@ struct ArtifactConfig {
     std::string version;
     std::string buildType;
     std::string script;
+    std::vector<std::string> regexIncludes;
+    std::vector<std::string> regexExcludes;
 };
 
 struct ComponentConfig {

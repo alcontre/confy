@@ -5,6 +5,7 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
+#include <regex>
 #include <vector>
 
 namespace {
@@ -58,6 +59,42 @@ std::string GetChildValueCI(xml_node<>* parent, const std::string& name) {
 
 bool HasChildCI(xml_node<>* parent, const std::string& name) {
     return FindChildCI(parent, name) != nullptr;
+}
+
+std::vector<std::string> CollectRegexFiltersCI(xml_node<>* parent, const std::string& sectionName) {
+    std::vector<std::string> filters;
+    auto* section = FindChildCI(parent, sectionName);
+    if (!section) {
+        return filters;
+    }
+
+    for (auto* node = section->first_node(); node != nullptr; node = node->next_sibling()) {
+        if (!NameEqualsCI(node, "regex")) {
+            continue;
+        }
+
+        const std::string pattern = node->value();
+        if (!pattern.empty()) {
+            filters.push_back(pattern);
+        }
+    }
+
+    return filters;
+}
+
+bool ValidateRegexFilters(const std::vector<std::string>& filters,
+                         const std::string& sectionName,
+                         std::string& errorMessage) {
+    for (const auto& pattern : filters) {
+        try {
+            std::regex compiled(pattern);
+            (void)compiled;
+        } catch (const std::regex_error& ex) {
+            errorMessage = "Invalid regex in <" + sectionName + ">: '" + pattern + "' (" + ex.what() + ")";
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -121,6 +158,21 @@ LoadResult ConfigLoader::LoadFromFile(const std::string& filePath) const {
                     component.artifact.version = GetChildValueCI(artifactNode, "version");
                     component.artifact.buildType = GetChildValueCI(artifactNode, "buildtype");
                     component.artifact.script = GetChildValueCI(artifactNode, "script");
+                    component.artifact.regexIncludes =
+                        CollectRegexFiltersCI(artifactNode, "regex-include");
+                    component.artifact.regexExcludes =
+                        CollectRegexFiltersCI(artifactNode, "regex-exclude");
+
+                    if (!ValidateRegexFilters(component.artifact.regexIncludes,
+                                              "regex-include",
+                                              result.errorMessage)) {
+                        return result;
+                    }
+                    if (!ValidateRegexFilters(component.artifact.regexExcludes,
+                                              "regex-exclude",
+                                              result.errorMessage)) {
+                        return result;
+                    }
                 }
 
                 model.components.push_back(std::move(component));
