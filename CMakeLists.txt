@@ -45,6 +45,7 @@ find_package(CURL REQUIRED)
 
 set(wxBUILD_SHARED OFF)
 set(wxBUILD_PRECOMP OFF)
+set(wxUSE_LIBTIFF OFF)
 add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
 
 add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
