@@ -20,6 +20,7 @@ class wxCheckBox;
 class wxComboBox;
 class wxCommandEvent;
 class wxUpdateUIEvent;
+class wxPanel;
 class wxScrolledWindow;
 class wxSizer;
 class wxStaticText;
@@ -72,10 +73,13 @@ private:
     wxStaticText* statusLabel_{nullptr};
     wxScrolledWindow* componentScroll_{nullptr};
     wxSizer* componentListSizer_{nullptr};
+    wxPanel* emptyStatePanel_{nullptr};
+    wxButton* loadConfigButton_{nullptr};
     wxButton* applyButton_{nullptr};
     std::vector<ComponentRowWidgets> rows_;
     std::vector<ComponentMetadataState> metadataState_;
     std::vector<std::pair<std::string, std::string>> componentArtifactRequests_;
+    std::string loadedConfigPath_;
     bool uiUpdating_{false};
 
     std::mutex metadataMutex_;

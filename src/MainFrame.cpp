@@ -9,12 +9,15 @@
 #include <wx/checkbox.h>
 #include <wx/combobox.h>
 #include <wx/filedlg.h>
+#include <wx/filename.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
+#include <wx/panel.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/statbox.h>
 #include <wx/stattext.h>
+#include <wx/stdpaths.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -46,6 +49,9 @@ namespace confy {
 
 MainFrame::MainFrame()
     : wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(900, 600)) {
+    CreateStatusBar(1);
+    SetStatusText("Config: none");
+
     auto* fileMenu = new wxMenu();
     fileMenu->Append(kIdLoadConfig, "&Load Config...\tCtrl+O");
     fileMenu->AppendSeparator();
@@ -69,6 +75,24 @@ MainFrame::MainFrame()
     componentScroll_->SetScrollRate(0, 6);
 
     componentListSizer_ = new wxBoxSizer(wxVERTICAL);
+
+    emptyStatePanel_ = new wxPanel(componentScroll_);
+    auto* emptyStateSizer = new wxBoxSizer(wxVERTICAL);
+    emptyStateSizer->AddStretchSpacer();
+
+    loadConfigButton_ = new wxButton(emptyStatePanel_, kIdLoadConfig, "Load config XML");
+    auto buttonFont = loadConfigButton_->GetFont();
+    buttonFont.MakeLarger();
+    loadConfigButton_->SetFont(buttonFont);
+    loadConfigButton_->SetMinSize(wxSize(280, 72));
+    emptyStateSizer->Add(loadConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxBOTTOM, 12);
+
+    auto* emptyStateLabel = new wxStaticText(emptyStatePanel_, wxID_ANY, "No config loaded.");
+    emptyStateSizer->Add(emptyStateLabel, 0, wxALIGN_CENTER_HORIZONTAL);
+    emptyStateSizer->AddStretchSpacer();
+    emptyStatePanel_->SetSizer(emptyStateSizer);
+
+    componentListSizer_->Add(emptyStatePanel_, 1, wxEXPAND);
     componentScroll_->SetSizer(componentListSizer_);
 
     rootSizer->Add(componentScroll_, 1, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
@@ -80,6 +104,7 @@ MainFrame::MainFrame()
     SetSizer(rootSizer);
 
     Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
+    Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_MENU, &MainFrame::OnSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_MENU, &MainFrame::OnDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
@@ -93,9 +118,18 @@ MainFrame::~MainFrame() {
 }
 
 void MainFrame::OnLoadConfig(wxCommandEvent&) {
+    wxString initialDirectory;
+    const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
+    if (!executablePath.empty()) {
+        wxFileName executableFile(executablePath);
+        if (executableFile.IsOk()) {
+            initialDirectory = executableFile.GetPath();
+        }
+    }
+
     wxFileDialog dialog(this,
                         "Open config XML",
-                        "",
+                        initialDirectory,
                         "",
                         "XML files (*.xml)|*.xml|All files (*.*)|*.*",
                         wxFD_OPEN | wxFD_FILE_MUST_EXIST);
@@ -111,6 +145,7 @@ void MainFrame::OnLoadConfig(wxCommandEvent&) {
     }
 
     config_ = std::move(result.config);
+    loadedConfigPath_ = dialog.GetPath().ToStdString();
     RenderConfig();
 }
 
@@ -190,6 +225,8 @@ void MainFrame::RenderConfig() {
     StopMetadataWorkers();
     uiUpdating_ = true;
     componentListSizer_->Clear(true);
+    emptyStatePanel_ = nullptr;
+    loadConfigButton_ = nullptr;
     rows_.clear();
     rows_.reserve(config_.components.size());
     metadataState_.clear();
@@ -207,6 +244,11 @@ void MainFrame::RenderConfig() {
     uiUpdating_ = false;
 
     statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
+    if (loadedConfigPath_.empty()) {
+        SetStatusText("Config: none");
+    } else {
+        SetStatusText(wxString::Format("Config: %s", loadedConfigPath_));
+    }
     applyButton_->Enable(!config_.components.empty());
 
     StartMetadataWorkers();
