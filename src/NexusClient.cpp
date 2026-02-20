@@ -291,12 +291,12 @@ std::vector<std::string> NexusClient::ExtractImmediateChildDirectories(
             remaining = remaining.substr(remainingOffset);
         }
 
-        if (remaining.back() != '/') {
+        if (remaining.empty() || remaining.back() != '/') {
             continue;
         }
 
         const auto slash = remaining.find('/');
-        if (slash == std::string::npos || slash == 0 || slash != remaining.size() - 1) {
+        if (slash == std::string::npos || slash == 0) {
             continue;
         }
 
