@@ -412,6 +412,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         fs::create_directories(outputPath.parent_path());
 
         std::string downloadError;
+        std::uint64_t currentDownloadedBytes = 0;
         std::cout << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
                   << "'" << std::endl;
         if (!HttpDownloadBinary(
@@ -419,6 +420,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                 creds,
                 outputPath.string(),
                 [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
+                    currentDownloadedBytes = downloadedBytes;
                     const double fileProgress = totalBytes > 0
                                                     ? static_cast<double>(downloadedBytes) /
                                                           static_cast<double>(totalBytes)
@@ -426,7 +428,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                     const int percent = static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
                                                          static_cast<double>(total));
                     progress(percent,
-                             "Downloading " + matched.asset.path + " (" +
+                             "Downloading (" + std::to_string(percent) + " %) " + matched.asset.path + " (" +
                                  FormatDownloadedSize(downloadedBytes) + ")");
                 },
                 downloadError)) {
@@ -438,7 +440,9 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
 
         ++completed;
         const int percent = static_cast<int>((completed * 100) / total);
-        progress(percent, "Downloading " + matched.asset.path);
+        progress(percent,
+                 "Downloading (" + std::to_string(percent) + " %) " + matched.asset.path + " (" +
+                     FormatDownloadedSize(currentDownloadedBytes) + ")");
     }
 
     return true;

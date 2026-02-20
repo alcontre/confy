@@ -10,6 +10,7 @@ namespace {
 
 constexpr int kTimerId = wxID_HIGHEST + 250;
 constexpr int kStatusLabelWidth = 420;
+constexpr std::size_t kMaxEventsPerTick = 64;
 
 }  // namespace
 
@@ -188,7 +189,9 @@ void DownloadProgressDialog::OnRetryComponent(std::size_t componentIndex) {
 
 void DownloadProgressDialog::ConsumeWorkerEvents() {
     DownloadEvent event;
-    while (worker_.TryPopEvent(event)) {
+    std::size_t processed = 0;
+    while (processed < kMaxEventsPerTick && worker_.TryPopEvent(event)) {
+        ++processed;
         switch (event.type) {
             case DownloadEventType::Started:
                 SetRowState(event.componentIndex, RowState::Running, "Starting", 0);
@@ -251,6 +254,7 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
     row.statusLabel->SetLabelText(status);
     row.statusLabel->Wrap(kStatusLabelWidth);
     row.gauge->SetValue(percent);
+    const bool wasDetailVisible = row.detailLabel->IsShown();
     row.detailLabel->SetLabelText(detail);
     if (detail.empty()) {
         row.detailLabel->Hide();
@@ -259,7 +263,9 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
         row.detailLabel->Show();
     }
     row.retryButton->Enable(state == RowState::Failed && !cancelRequested_);
-    Layout();
+    if (wasDetailVisible != row.detailLabel->IsShown()) {
+        Layout();
+    }
 }
 
 void DownloadProgressDialog::QueueRetry(std::size_t componentIndex) {
