@@ -18,6 +18,10 @@ if(CCACHE_PROGRAM)
     endif()
 endif()
 
+if(MSVC)
+    add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
+
 set(CONFY_SOURCES
     src/main.cpp
     src/App.cpp
