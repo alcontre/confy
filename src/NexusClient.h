@@ -37,9 +37,9 @@ public:
                         const std::string& version,
                         std::vector<std::string>& outBuildTypes,
                         std::string& errorMessage) const;
-    static std::vector<std::string> ExtractUniqueFirstPathSegment(
-        const std::vector<NexusArtifactAsset>& assets,
-        const std::string& prefix);
+    static std::vector<std::string> ExtractImmediateChildDirectories(
+        const std::vector<std::string>& directoryPaths,
+        const std::string& parentPath);
     static std::string BuildCurlUserPwd(const ServerCredentials& creds) {
         return creds.username + ":" + creds.password;
     }
@@ -57,6 +57,11 @@ private:
                     const std::string& query,
                     std::vector<NexusArtifactAsset>& out,
                     std::string& errorMessage) const;
+    bool ListChildDirectories(const RepoInfo& repo,
+                              const ServerCredentials& creds,
+                              const std::string& parentPath,
+                              std::vector<std::string>& out,
+                              std::string& errorMessage) const;
     bool HttpGetText(const std::string& url,
                      const ServerCredentials& creds,
                      std::string& out,

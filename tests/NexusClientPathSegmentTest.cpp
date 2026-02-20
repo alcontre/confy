@@ -17,16 +17,16 @@ bool Check(bool condition, const std::string& message) {
 }  // namespace
 
 int main() {
-    const std::vector<confy::NexusArtifactAsset> assets{
-        {"component-a/1.0.0/Debug/file-a.zip", ""},
-        {"component-a/1.0.0/Release/file-b.zip", ""},
-        {"component-a/2.0.0/Release/file-c.zip", ""},
-        {"component-a/2.0.0/Release/file-d.zip", ""},
-        {"component-b/0.1.0/Debug/file-e.zip", ""},
+    const std::vector<std::string> directories{
+        "component-a/1.0.0/",
+        "component-a/2.0.0/",
+        "component-a/2.0.0/Debug/",
+        "component-a/2.0.0/Release/",
+        "component-b/0.1.0/",
     };
 
     const auto versions =
-        confy::NexusClient::ExtractUniqueFirstPathSegment(assets, "component-a/");
+        confy::NexusClient::ExtractImmediateChildDirectories(directories, "component-a/");
     if (!Check(versions.size() == 2, "Expected two unique versions for component-a")) {
         return 1;
     }
@@ -36,8 +36,8 @@ int main() {
     }
 
     const auto buildTypes =
-        confy::NexusClient::ExtractUniqueFirstPathSegment(assets, "component-a/1.0.0/");
-    if (!Check(buildTypes.size() == 2, "Expected two build types for component-a/1.0.0")) {
+        confy::NexusClient::ExtractImmediateChildDirectories(directories, "component-a/2.0.0/");
+    if (!Check(buildTypes.size() == 2, "Expected two build types for component-a/2.0.0")) {
         return 1;
     }
     if (!Check(buildTypes[0] == "Debug" && buildTypes[1] == "Release",
