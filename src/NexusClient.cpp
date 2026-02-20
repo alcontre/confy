@@ -623,9 +623,13 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
     curl_easy_cleanup(curl);
 
-    auto deletePartialFile = [&outFile]() {
+    auto deletePartialFile = [outFile]() {
         std::error_code removeError;
         fs::remove(outFile, removeError);
+        if (removeError) {
+            std::cerr << "[nexus] failed to remove partial file path='" << outFile
+                      << "' error='" << removeError.message() << "'" << std::endl;
+        }
     };
 
     if (result != CURLE_OK) {
@@ -634,7 +638,9 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
         } else {
             errorMessage = std::string("HTTP download failed: ") + curl_easy_strerror(result);
         }
-        output.close();
+        if (output.is_open()) {
+            output.close();
+        }
         deletePartialFile();
         std::cerr << "[nexus] http download failed path='" << outFile << "' error='" << errorMessage
                   << "'" << std::endl;
@@ -643,7 +649,9 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     if (statusCode < 200 || statusCode >= 300) {
         errorMessage = "HTTP status " + std::to_string(statusCode);
-        output.close();
+        if (output.is_open()) {
+            output.close();
+        }
         deletePartialFile();
         std::cerr << "[nexus] http download status=" << statusCode << " path='" << outFile << "'"
                   << std::endl;
@@ -652,7 +660,9 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
 
     if (!output.good()) {
         errorMessage = "Unable to write local output file";
-        output.close();
+        if (output.is_open()) {
+            output.close();
+        }
         deletePartialFile();
         std::cerr << "[nexus] write output file failed path='" << outFile << "'" << std::endl;
         return false;
