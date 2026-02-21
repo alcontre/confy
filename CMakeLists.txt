@@ -18,6 +18,11 @@ if(CCACHE_PROGRAM)
     endif()
 endif()
 
+if(MSVC)
+    add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 set(CONFY_SOURCES
     src/main.cpp
     src/App.cpp
@@ -48,7 +53,7 @@ set(wxBUILD_PRECOMP OFF)
 set(wxUSE_LIBTIFF OFF)
 add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
 
-add_executable(confy ${CONFY_SOURCES} ${CONFY_HEADERS})
+add_executable(confy WIN32 ${CONFY_SOURCES} ${CONFY_HEADERS})
 target_include_directories(confy PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/single_include

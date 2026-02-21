@@ -4,6 +4,7 @@
 #include "AuthCredentials.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <thread>
 
@@ -159,16 +160,30 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
               << "' repoUrl='" << job.repositoryUrl << "' target='" << job.targetDirectory << "'" << std::endl;
     PushEvent({job.jobId, job.componentIndex, DownloadEventType::Started, 0, "Starting"});
 
-    const char* home = std::getenv("HOME");
-    if (!home) {
-        std::cerr << "[download-worker] jobId=" << job.jobId << " failed: HOME not set" << std::endl;
-        PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, "Missing HOME environment"});
+#ifdef _WIN32
+    std::string homeDir;
+    if (const char* h = std::getenv("USERPROFILE")) {
+        homeDir = h;
+    } else {
+        const char* drive = std::getenv("HOMEDRIVE");
+        const char* homepath = std::getenv("HOMEPATH");
+        if (drive && homepath) {
+            homeDir = std::string(drive) + homepath;
+        }
+    }
+#else
+    const char* homeEnv = std::getenv("HOME");
+    const std::string homeDir = homeEnv ? homeEnv : "";
+#endif
+    if (homeDir.empty()) {
+        std::cerr << "[download-worker] jobId=" << job.jobId << " failed: home directory not available" << std::endl;
+        PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, "Missing home directory"});
         return;
     }
 
     AuthCredentials credentials;
     std::string credentialError;
-    const std::string settingsPath = std::string(home) + "/.m2/settings.xml";
+    const std::string settingsPath = (std::filesystem::path(homeDir) / ".m2" / "settings.xml").string();
     if (!credentials.LoadFromM2SettingsXml(settingsPath, credentialError)) {
         std::cerr << "[download-worker] jobId=" << job.jobId << " auth load failed: " << credentialError
                   << std::endl;

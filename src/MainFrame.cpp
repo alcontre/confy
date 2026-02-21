@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 
 namespace {
 
@@ -166,7 +167,7 @@ void MainFrame::OnApply(wxCommandEvent&) {
         job.repositoryUrl = component.artifact.url;
         job.version = component.artifact.version;
         job.buildType = component.artifact.buildType;
-        job.targetDirectory = config_.rootPath + "/" + component.path;
+        job.targetDirectory = (std::filesystem::path(config_.rootPath) / component.path).string();
         job.regexIncludes = component.artifact.regexIncludes;
         job.regexExcludes = component.artifact.regexExcludes;
 
@@ -502,8 +503,22 @@ void MainFrame::EnqueueBuildTypeFetch(std::size_t componentIndex, const std::str
 }
 
 void MainFrame::MetadataWorkerLoop() {
-    const char* home = std::getenv("HOME");
-    const std::string settingsPath = home == nullptr ? "" : std::string(home) + "/.m2/settings.xml";
+#ifdef _WIN32
+    std::string homeDir;
+    if (const char* h = std::getenv("USERPROFILE")) {
+        homeDir = h;
+    } else {
+        const char* drive = std::getenv("HOMEDRIVE");
+        const char* homepath = std::getenv("HOMEPATH");
+        if (drive && homepath) {
+            homeDir = std::string(drive) + homepath;
+        }
+    }
+#else
+    const char* homeEnv = std::getenv("HOME");
+    const std::string homeDir = homeEnv ? homeEnv : "";
+#endif
+    const std::string settingsPath = homeDir.empty() ? "" : (std::filesystem::path(homeDir) / ".m2" / "settings.xml").string();
 
     while (true) {
         MetadataTask task;
