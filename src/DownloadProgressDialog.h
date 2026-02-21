@@ -60,7 +60,7 @@ private:
     std::vector<ProgressRow> rows_;
     std::unordered_map<std::size_t, std::size_t> rowIndexByComponent_;
 
-    DownloadWorkerQueue worker_{1};
+    DownloadWorkerQueue worker_{6};
     wxTimer* timer_{nullptr};
     wxButton* cancelButton_{nullptr};
     wxButton* retryFailedButton_{nullptr};
