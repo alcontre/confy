@@ -80,9 +80,15 @@ MainFrame::MainFrame()
     componentScroll_ = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
     componentScroll_->SetScrollRate(0, 6);
 
+    componentContentPanel_ = new wxPanel(componentScroll_);
     componentListSizer_ = new wxBoxSizer(wxVERTICAL);
+    componentContentPanel_->SetSizer(componentListSizer_);
 
-    emptyStatePanel_ = new wxPanel(componentScroll_);
+    auto* scrollSizer = new wxBoxSizer(wxVERTICAL);
+    scrollSizer->Add(componentContentPanel_, 1, wxEXPAND);
+    componentScroll_->SetSizer(scrollSizer);
+
+    emptyStatePanel_ = new wxPanel(componentContentPanel_);
     auto* emptyStateSizer = new wxBoxSizer(wxVERTICAL);
     emptyStateSizer->AddStretchSpacer();
 
@@ -96,7 +102,6 @@ MainFrame::MainFrame()
     emptyStatePanel_->SetSizer(emptyStateSizer);
 
     componentListSizer_->Add(emptyStatePanel_, 1, wxEXPAND);
-    componentScroll_->SetSizer(componentListSizer_);
 
     rootSizer->Add(componentScroll_, 1, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
 
@@ -116,6 +121,7 @@ MainFrame::MainFrame()
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
+    Bind(wxEVT_SIZE, &MainFrame::OnFrameSize, this);
 }
 
 MainFrame::~MainFrame() {
@@ -235,6 +241,17 @@ void MainFrame::OnUpdateDebugConsole(wxUpdateUIEvent& event) {
     event.Check(IsDebugConsoleVisible());
 }
 
+void MainFrame::OnFrameSize(wxSizeEvent& event) {
+    event.Skip();
+    RelayoutComponentArea();
+}
+
+void MainFrame::RelayoutComponentArea() {
+    componentContentPanel_->Layout();
+    componentScroll_->Layout();
+    componentScroll_->FitInside();
+}
+
 void MainFrame::RenderConfig() {
     StopMetadataWorkers();
     uiUpdating_ = true;
@@ -253,8 +270,7 @@ void MainFrame::RenderConfig() {
         AddComponentRow(i);
     }
 
-    componentScroll_->Layout();
-    componentScroll_->FitInside();
+    RelayoutComponentArea();
     uiUpdating_ = false;
 
     statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
@@ -280,35 +296,36 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
     const auto displayName = component.displayName;
     auto* rowBox = new wxStaticBoxSizer(wxVERTICAL,
-                                        componentScroll_,
+                                        componentContentPanel_,
                                         wxString::Format("%s  (%s)", displayName, component.path));
+    auto* rowParent = rowBox->GetStaticBox();
 
     auto* detailsSizer = new wxBoxSizer(wxVERTICAL);
 
-    auto makeFixedLabel = [this](const wxString& text, int width) {
-        auto* label = new wxStaticText(componentScroll_, wxID_ANY, text);
+    auto makeFixedLabel = [rowParent](const wxString& text, int width) {
+        auto* label = new wxStaticText(rowParent, wxID_ANY, text);
         label->SetMinSize(wxSize(width, -1));
         return label;
     };
 
     auto* sourceRow = new wxBoxSizer(wxHORIZONTAL);
     sourceRow->Add(makeFixedLabel("Source", kSectionLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-    auto* sourceEnabled = new wxCheckBox(componentScroll_, wxID_ANY, "Enable");
+    auto* sourceEnabled = new wxCheckBox(rowParent, wxID_ANY, "Enable");
     sourceRow->Add(sourceEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     sourceRow->Add(makeFixedLabel("Branch/Tag", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-    auto* sourceBranch = new wxComboBox(componentScroll_, wxID_ANY);
+    auto* sourceBranch = new wxComboBox(rowParent, wxID_ANY);
     sourceRow->Add(sourceBranch, 1, wxRIGHT | wxEXPAND, 0);
     detailsSizer->Add(sourceRow, 0, wxEXPAND | wxBOTTOM, 6);
 
     auto* artifactRow = new wxBoxSizer(wxHORIZONTAL);
     artifactRow->Add(makeFixedLabel("Artifact", kSectionLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-    auto* artifactEnabled = new wxCheckBox(componentScroll_, wxID_ANY, "Enable");
+    auto* artifactEnabled = new wxCheckBox(rowParent, wxID_ANY, "Enable");
     artifactRow->Add(artifactEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     artifactRow->Add(makeFixedLabel("Version", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-    auto* artifactVersion = new wxComboBox(componentScroll_, wxID_ANY);
+    auto* artifactVersion = new wxComboBox(rowParent, wxID_ANY);
     artifactRow->Add(artifactVersion, 1, wxRIGHT | wxEXPAND, 10);
     artifactRow->Add(makeFixedLabel("Build", 44), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-    auto* artifactBuildType = new wxComboBox(componentScroll_, wxID_ANY);
+    auto* artifactBuildType = new wxComboBox(rowParent, wxID_ANY);
     artifactRow->Add(artifactBuildType, 1, wxRIGHT | wxEXPAND, 0);
     detailsSizer->Add(artifactRow, 0, wxEXPAND);
 
@@ -356,7 +373,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     row.sourceBranch->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
-        UpdateComboTooltip(rows_[componentIndex].sourceBranch);
+        UpdateComboTooltip(*rows_[componentIndex].sourceBranch);
         if (uiUpdating_) {
             return;
         }
@@ -365,7 +382,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     row.artifactVersion->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
-        UpdateComboTooltip(rows_[componentIndex].artifactVersion);
+        UpdateComboTooltip(*rows_[componentIndex].artifactVersion);
         if (uiUpdating_) {
             return;
         }
@@ -373,7 +390,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
             rows_[componentIndex].artifactVersion->GetValue().ToStdString();
     });
     row.artifactVersion->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent&) {
-        UpdateComboTooltip(rows_[componentIndex].artifactVersion);
+        UpdateComboTooltip(*rows_[componentIndex].artifactVersion);
         if (uiUpdating_) {
             return;
         }
@@ -389,7 +406,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     row.artifactBuildType->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
-        UpdateComboTooltip(rows_[componentIndex].artifactBuildType);
+        UpdateComboTooltip(*rows_[componentIndex].artifactBuildType);
         if (uiUpdating_) {
             return;
         }
@@ -400,18 +417,14 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     RefreshRowEnabledState(componentIndex);
 }
 
-void MainFrame::UpdateComboTooltip(wxComboBox* comboBox) {
-    if (comboBox == nullptr) {
-        return;
-    }
-
-    const auto value = comboBox->GetValue();
+void MainFrame::UpdateComboTooltip(wxComboBox& comboBox) {
+    const auto value = comboBox.GetValue();
     if (value.empty()) {
-        comboBox->UnsetToolTip();
+        comboBox.UnsetToolTip();
         return;
     }
 
-    comboBox->SetToolTip(value);
+    comboBox.SetToolTip(value);
 }
 
 void MainFrame::UpdateRowTooltips(std::size_t componentIndex) {
@@ -420,9 +433,9 @@ void MainFrame::UpdateRowTooltips(std::size_t componentIndex) {
     }
 
     const auto& row = rows_[componentIndex];
-    UpdateComboTooltip(row.sourceBranch);
-    UpdateComboTooltip(row.artifactVersion);
-    UpdateComboTooltip(row.artifactBuildType);
+    UpdateComboTooltip(*row.sourceBranch);
+    UpdateComboTooltip(*row.artifactVersion);
+    UpdateComboTooltip(*row.artifactBuildType);
 }
 
 void MainFrame::RefreshRowEnabledState(std::size_t componentIndex) {
@@ -645,7 +658,7 @@ void MainFrame::MetadataWorkerLoop() {
                     config_.components[index].artifact.version = versions.front();
                 }
                 uiUpdating_ = false;
-                UpdateComboTooltip(versionBox);
+                UpdateComboTooltip(*versionBox);
 
                 if (!config_.components[index].artifact.version.empty()) {
                     EnqueueBuildTypeFetch(index, config_.components[index].artifact.version);
@@ -691,7 +704,7 @@ void MainFrame::MetadataWorkerLoop() {
                 config_.components[index].artifact.buildType = buildTypes.front();
             }
             uiUpdating_ = false;
-            UpdateComboTooltip(buildTypeBox);
+            UpdateComboTooltip(*buildTypeBox);
         });
     }
 }
