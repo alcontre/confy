@@ -45,8 +45,10 @@ private:
     void OnApply(wxCommandEvent& event);
     void OnSelectAll(wxCommandEvent& event);
     void OnDeselectAll(wxCommandEvent& event);
+    void OnToggleDebugConsole(wxCommandEvent& event);
     void OnUpdateSelectAll(wxUpdateUIEvent& event);
     void OnUpdateDeselectAll(wxUpdateUIEvent& event);
+    void OnUpdateDebugConsole(wxUpdateUIEvent& event);
     void RenderConfig();
     void AddComponentRow(std::size_t componentIndex);
     void UpdateComboTooltip(wxComboBox* comboBox);

@@ -8,7 +8,7 @@ Cross-platform C++17/wxWidgets desktop app for loading an XML config and downloa
 - wxWidgets app shell with `File -> Load Config...`
 - Basic component checklist rendering
 - Initial XML parsing into a strongly-typed model
-- `Apply` action stubbed for next iteration
+- Debug Console window (`View -> Debug Console`) for runtime app logs
 
 ## Build
 

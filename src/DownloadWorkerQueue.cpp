@@ -5,10 +5,10 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <thread>
 
 #include <wx/init.h>
+#include <wx/log.h>
 
 namespace confy {
 
@@ -34,7 +34,7 @@ void DownloadWorkerQueue::Start() {
         workers_.emplace_back(&DownloadWorkerQueue::WorkerLoop, this);
     }
 
-    std::cout << "[download-worker] started with workerCount=" << workerCount_ << std::endl;
+    wxLogMessage("[download-worker] started with workerCount=%zu", workerCount_);
 }
 
 void DownloadWorkerQueue::Stop() {
@@ -65,12 +65,15 @@ void DownloadWorkerQueue::Stop() {
         pendingJobs_.swap(empty);
     }
 
-    std::cout << "[download-worker] stopped" << std::endl;
+    wxLogMessage("[download-worker] stopped");
 }
 
 void DownloadWorkerQueue::Submit(NexusDownloadJob job) {
-    std::cout << "[download-worker] enqueue jobId=" << job.jobId << " component='" << job.componentName
-              << "' version='" << job.version << "' buildType='" << job.buildType << "'" << std::endl;
+    wxLogMessage("[download-worker] enqueue jobId=%llu component='%s' version='%s' buildType='%s'",
+                 static_cast<unsigned long long>(job.jobId),
+                 job.componentName.c_str(),
+                 job.version.c_str(),
+                 job.buildType.c_str());
     {
         std::scoped_lock lock(queueMutex_);
         cancelAllRequested_.store(false);
@@ -81,7 +84,7 @@ void DownloadWorkerQueue::Submit(NexusDownloadJob job) {
 
 void DownloadWorkerQueue::RequestCancelAll() {
     cancelAllRequested_.store(true);
-    std::cout << "[download-worker] cancel-all requested" << std::endl;
+    wxLogWarning("[download-worker] cancel-all requested");
 }
 
 bool DownloadWorkerQueue::TryPopEvent(DownloadEvent& outEvent) {
@@ -98,7 +101,7 @@ bool DownloadWorkerQueue::TryPopEvent(DownloadEvent& outEvent) {
 void DownloadWorkerQueue::WorkerLoop() {
     wxInitializer wxInit;
     if (!wxInit.IsOk()) {
-        std::cerr << "[download-worker] wx runtime init failed in worker thread" << std::endl;
+        wxLogError("[download-worker] wx runtime init failed in worker thread");
         while (true) {
             NexusDownloadJob job;
             {
@@ -113,8 +116,7 @@ void DownloadWorkerQueue::WorkerLoop() {
         }
     }
 
-    std::cout << "[download-worker] worker thread started (id=" << std::this_thread::get_id() << ")"
-              << std::endl;
+    wxLogMessage("[download-worker] worker thread started");
 
     while (true) {
         NexusDownloadJob job;
@@ -124,8 +126,7 @@ void DownloadWorkerQueue::WorkerLoop() {
             queueCv_.wait(lock, [this]() { return stopping_ || !pendingJobs_.empty(); });
 
             if (stopping_ && pendingJobs_.empty()) {
-                std::cout << "[download-worker] worker thread exiting (id=" << std::this_thread::get_id() << ")"
-                          << std::endl;
+                wxLogMessage("[download-worker] worker thread exiting");
                 return;
             }
 
@@ -134,7 +135,8 @@ void DownloadWorkerQueue::WorkerLoop() {
         }
 
         if (cancelAllRequested_.load()) {
-            std::cout << "[download-worker] skip jobId=" << job.jobId << " due to cancellation" << std::endl;
+            wxLogWarning("[download-worker] skip jobId=%llu due to cancellation",
+                         static_cast<unsigned long long>(job.jobId));
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Cancelled, 0, "Cancelled"});
             continue;
         }
@@ -156,8 +158,11 @@ void DownloadWorkerQueue::PushEvent(DownloadEvent event) {
 }
 
 void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
-    std::cout << "[download-worker] start jobId=" << job.jobId << " component='" << job.componentName
-              << "' repoUrl='" << job.repositoryUrl << "' target='" << job.targetDirectory << "'" << std::endl;
+    wxLogMessage("[download-worker] start jobId=%llu component='%s' repoUrl='%s' target='%s'",
+                 static_cast<unsigned long long>(job.jobId),
+                 job.componentName.c_str(),
+                 job.repositoryUrl.c_str(),
+                 job.targetDirectory.c_str());
     PushEvent({job.jobId, job.componentIndex, DownloadEventType::Started, 0, "Starting"});
 
 #ifdef _WIN32
@@ -176,7 +181,8 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
     const std::string homeDir = homeEnv ? homeEnv : "";
 #endif
     if (homeDir.empty()) {
-        std::cerr << "[download-worker] jobId=" << job.jobId << " failed: home directory not available" << std::endl;
+        wxLogError("[download-worker] jobId=%llu failed: home directory not available",
+                   static_cast<unsigned long long>(job.jobId));
         PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, "Missing home directory"});
         return;
     }
@@ -185,14 +191,16 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
     std::string credentialError;
     const std::string settingsPath = (std::filesystem::path(homeDir) / ".m2" / "settings.xml").string();
     if (!credentials.LoadFromM2SettingsXml(settingsPath, credentialError)) {
-        std::cerr << "[download-worker] jobId=" << job.jobId << " auth load failed: " << credentialError
-                  << std::endl;
+        wxLogError("[download-worker] jobId=%llu auth load failed: %s",
+                   static_cast<unsigned long long>(job.jobId),
+                                     credentialError.c_str());
         PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, credentialError});
         return;
     }
 
-    std::cout << "[download-worker] jobId=" << job.jobId << " using m2 settings: " << settingsPath
-              << std::endl;
+    wxLogMessage("[download-worker] jobId=%llu using m2 settings: %s",
+                 static_cast<unsigned long long>(job.jobId),
+                                 settingsPath.c_str());
 
     NexusClient client(std::move(credentials));
     std::string error;
@@ -207,25 +215,29 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
         job.regexExcludes,
         cancelAllRequested_,
         [this, &job](int percent, const std::string& message) {
-            std::cout << "[download-worker] progress jobId=" << job.jobId << " percent=" << percent
-                      << " message='" << message << "'" << std::endl;
+            wxLogMessage("[download-worker] progress jobId=%llu percent=%d message='%s'",
+                         static_cast<unsigned long long>(job.jobId),
+                         percent,
+                         message.c_str());
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Progress, percent, message});
         },
         error);
 
     if (!ok) {
         if (cancelAllRequested_.load()) {
-            std::cout << "[download-worker] cancelled jobId=" << job.jobId << std::endl;
+            wxLogWarning("[download-worker] cancelled jobId=%llu",
+                         static_cast<unsigned long long>(job.jobId));
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Cancelled, 0, "Cancelled"});
         } else {
-            std::cerr << "[download-worker] failed jobId=" << job.jobId << " error='" << error << "'"
-                      << std::endl;
+            wxLogError("[download-worker] failed jobId=%llu error='%s'",
+                       static_cast<unsigned long long>(job.jobId),
+                       error.c_str());
             PushEvent({job.jobId, job.componentIndex, DownloadEventType::Failed, 0, error});
         }
         return;
     }
 
-    std::cout << "[download-worker] completed jobId=" << job.jobId << std::endl;
+    wxLogMessage("[download-worker] completed jobId=%llu", static_cast<unsigned long long>(job.jobId));
     PushEvent({job.jobId, job.componentIndex, DownloadEventType::Completed, 100, "Completed"});
 }
 

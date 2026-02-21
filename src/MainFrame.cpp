@@ -2,6 +2,7 @@
 
 #include "AuthCredentials.h"
 #include "ConfigLoader.h"
+#include "DebugConsole.h"
 #include "DownloadProgressDialog.h"
 #include "NexusClient.h"
 
@@ -29,6 +30,7 @@ namespace {
 constexpr int kIdLoadConfig = wxID_HIGHEST + 1;
 constexpr int kIdApply = wxID_HIGHEST + 2;
 constexpr int kIdDeselectAll = wxID_HIGHEST + 3;
+constexpr int kIdViewDebugConsole = wxID_HIGHEST + 4;
 constexpr int kSectionLabelWidth = 64;
 constexpr int kFieldLabelWidth = 72;
 
@@ -60,9 +62,13 @@ MainFrame::MainFrame()
     editMenu->Append(wxID_SELECTALL, "Select &All");
     editMenu->Append(kIdDeselectAll, "&Deselect All");
 
+    auto* viewMenu = new wxMenu();
+    viewMenu->AppendCheckItem(kIdViewDebugConsole, "&Debug Console");
+
     auto* menuBar = new wxMenuBar();
     menuBar->Append(fileMenu, "&File");
     menuBar->Append(editMenu, "&Edit");
+    menuBar->Append(viewMenu, "&View");
     SetMenuBar(menuBar);
 
     auto* rootSizer = new wxBoxSizer(wxVERTICAL);
@@ -104,9 +110,11 @@ MainFrame::MainFrame()
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_MENU, &MainFrame::OnSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_MENU, &MainFrame::OnDeselectAll, this, kIdDeselectAll);
+    Bind(wxEVT_MENU, &MainFrame::OnToggleDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDeselectAll, this, kIdDeselectAll);
+    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
 }
 
@@ -217,6 +225,14 @@ void MainFrame::OnUpdateSelectAll(wxUpdateUIEvent& event) {
 
 void MainFrame::OnUpdateDeselectAll(wxUpdateUIEvent& event) {
     event.Enable(!config_.components.empty());
+}
+
+void MainFrame::OnToggleDebugConsole(wxCommandEvent&) {
+    ToggleDebugConsole(this);
+}
+
+void MainFrame::OnUpdateDebugConsole(wxUpdateUIEvent& event) {
+    event.Check(IsDebugConsoleVisible());
 }
 
 void MainFrame::RenderConfig() {
