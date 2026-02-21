@@ -197,14 +197,7 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
                 SetRowState(event.componentIndex, RowState::Running, "Starting", 0);
                 break;
             case DownloadEventType::Progress:
-                if (!event.message.empty()) {
-                    SetRowState(event.componentIndex,
-                                RowState::Running,
-                                wxString::FromUTF8(event.message),
-                                event.percent);
-                } else {
-                    SetRowState(event.componentIndex, RowState::Running, "Downloading", event.percent);
-                }
+                SetRowState(event.componentIndex, RowState::Running, wxString::FromUTF8(event.message), event.percent);
                 break;
             case DownloadEventType::Completed:
                 SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
@@ -213,15 +206,7 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
                 SetRowState(event.componentIndex, RowState::Failed, "Cancelled", 0);
                 break;
             case DownloadEventType::Failed:
-                if (!event.message.empty()) {
-                    SetRowState(event.componentIndex,
-                                RowState::Failed,
-                                "Failed",
-                                0,
-                                wxString::FromUTF8(event.message));
-                } else {
-                    SetRowState(event.componentIndex, RowState::Failed, "Failed", 0);
-                }
+                SetRowState(event.componentIndex, RowState::Failed, "Failed", 0, wxString::FromUTF8(event.message));
                 break;
         }
     }

@@ -219,6 +219,7 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
         job.regexIncludes,
         job.regexExcludes,
         cancelAllRequested_,
+        // Progress callback
         [this, &job](int percent, const std::string& message) {
             wxLogMessage("[download-worker] progress jobId=%llu percent=%d message='%s'",
                          static_cast<unsigned long long>(job.jobId),
