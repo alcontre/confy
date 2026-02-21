@@ -146,13 +146,18 @@ void DownloadWorkerQueue::WorkerLoop() {
 }
 
 void DownloadWorkerQueue::PushEvent(DownloadEvent event) {
-    std::scoped_lock lock(eventMutex_);
-    if (event.type == DownloadEventType::Progress && !events_.empty()) {
-        DownloadEvent& tail = events_.back();
-        if (tail.type == DownloadEventType::Progress && tail.componentIndex == event.componentIndex) {
-            tail = std::move(event);
-            return;
-        }
+  // Keep only the latest progress update per component as an "easy"
+  // backpressure mechanism to avoid overwhelming the UI with progress updates
+  // when there are many files to download. For other event types, or if there
+  // is no existing progress event for the component, just push as normal.
+  std::scoped_lock lock(eventMutex_);
+  if (event.type == DownloadEventType::Progress && !events_.empty()) {
+    DownloadEvent &tail = events_.back();
+    if (tail.type == DownloadEventType::Progress &&
+        tail.componentIndex == event.componentIndex) {
+      tail = std::move(event);
+      return;
+    }
     }
     events_.push(std::move(event));
 }
