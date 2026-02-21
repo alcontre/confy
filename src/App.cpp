@@ -1,16 +1,28 @@
 #include "App.h"
 
+#include "AppSettings.h"
 #include "DebugConsole.h"
 #include "MainFrame.h"
 
-#include <wx/config.h>
-#include <wx/fileconf.h>
+#include <wx/filename.h>
+#include <wx/stdpaths.h>
 
 namespace confy {
 
 bool App::OnInit() {
-    // wxConfig::Set() takes ownership of the pointer and deletes it at exit.
-    wxConfig::Set(new wxFileConfig(GetAppName()));
+    wxString executableDir;
+    const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
+    if (!executablePath.empty()) {
+        wxFileName executableFile(executablePath);
+        if (executableFile.IsOk()) {
+            executableDir = executableFile.GetPath();
+        }
+    }
+    if (executableDir.empty()) {
+        executableDir = wxFileName::GetCwd();
+    }
+    AppSettings::Initialize(executableDir.ToStdString());
+
     InitializeDebugLogging();
     auto* mainFrame = new MainFrame();
     mainFrame->Show(true);

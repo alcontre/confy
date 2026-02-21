@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 
+#include "AppSettings.h"
 #include "AuthCredentials.h"
 #include "ConfigLoader.h"
 #include "DebugConsole.h"
@@ -9,7 +10,6 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/combobox.h>
-#include <wx/config.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/menu.h>
@@ -106,8 +106,8 @@ MainFrame::MainFrame()
     loadLastConfigButton_->Hide();
     emptyStateSizer->Add(loadLastConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 12);
 
-    wxString lastPath;
-    if (wxConfig::Get()->Read("/LastConfigPath", &lastPath) && !lastPath.empty()) {
+    wxString lastPath(AppSettings::Get().GetLastConfigPath());
+    if (!lastPath.empty()) {
         loadLastConfigButton_->SetLabel(wxString::Format("Load last: %s", lastPath));
         loadLastConfigButton_->SetToolTip(lastPath);
         loadLastConfigButton_->Show();
@@ -168,11 +168,11 @@ void MainFrame::OnLoadConfig(wxCommandEvent&) {
 }
 
 void MainFrame::OnLoadLastConfig(wxCommandEvent&) {
-    wxString lastPath;
-    if (!wxConfig::Get()->Read("/LastConfigPath", &lastPath) || lastPath.empty()) {
+    const auto lastPath = AppSettings::Get().GetLastConfigPath();
+    if (lastPath.empty()) {
         return;
     }
-    LoadConfigFromPath(lastPath);
+    LoadConfigFromPath(wxString(lastPath));
 }
 
 void MainFrame::LoadConfigFromPath(const wxString& path) {
@@ -185,8 +185,7 @@ void MainFrame::LoadConfigFromPath(const wxString& path) {
 
     config_ = std::move(result.config);
     loadedConfigPath_ = path.ToStdString();
-    wxConfig::Get()->Write("/LastConfigPath", path);
-    wxConfig::Get()->Flush();
+    AppSettings::Get().SetLastConfigPath(loadedConfigPath_);
     RenderConfig();
 }
 
