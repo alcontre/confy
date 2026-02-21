@@ -18,9 +18,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install libcurl via vcpkg
-        run: vcpkg install curl:x64-windows
-
       - name: Configure
         run: |
           cmake -S . -B build `
@@ -35,4 +32,4 @@ jobs:
         working-directory: build
         run: ctest -C Release --output-on-failure
         env:
-          PATH: "${{ env.VCPKG_INSTALLATION_ROOT }}\\installed\\x64-windows\\bin;${{ env.PATH }}"
+          PATH: "${{ github.workspace }}\\vcpkg_installed\\x64-windows\\bin;${{ env.PATH }}"

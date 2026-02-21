@@ -11,7 +11,8 @@ setlocal EnableDelayedExpansion
 :: Requirements:
 ::   - Visual Studio 2019 (v16) installed
 ::   - vcpkg installed and VCPKG_ROOT set, OR vcpkg on PATH
-::   - curl:x64-windows installed via vcpkg
+::
+:: Dependencies (curl) are installed automatically via vcpkg manifest mode.
 :: ------------------------------------------------------------
 
 set BUILD_TYPE=%~1
