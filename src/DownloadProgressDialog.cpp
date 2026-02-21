@@ -21,7 +21,7 @@ constexpr int kGaugeWidth = 300;
 constexpr int kStatusLabelWidth = 420;
 constexpr int kDetailLabelWidth = 420;
 constexpr int kScrollRateY = 14;
-constexpr int kRowMinHeight = 74;
+constexpr int kRowMinHeight = 62;
 constexpr int kRowsPaneMinHeight = 120;
 constexpr int kInitialDialogWidth = 760;
 constexpr int kInitialDialogHeight = 420;
@@ -133,13 +133,13 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         mainLineSizer->Add(retryButton, 0, wxALIGN_CENTER_VERTICAL);
 
         contentSizer->Add(mainLineSizer, 0, wxEXPAND);
-        contentSizer->Add(statusLabel, 0, wxTOP | wxEXPAND, 4);
-        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 2);
+        contentSizer->Add(statusLabel, 0, wxTOP | wxEXPAND, 2);
+        contentSizer->Add(detailLabel, 0, wxTOP | wxEXPAND, 1);
 
-        rowSizer->Add(nameLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        rowSizer->Add(nameLabel, 0, wxALIGN_TOP | wxRIGHT, 8);
         rowSizer->Add(contentSizer, 1, wxEXPAND);
 
-        listSizer->Add(rowPanel, 0, wxEXPAND | wxBOTTOM, 6);
+        listSizer->Add(rowPanel, 0, wxEXPAND | wxBOTTOM, 3);
 
         ProgressRow row;
         row.container = rowPanel;
@@ -333,12 +333,20 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
         const wxString fullPath = status;
         row.statusLabel->SetLabelText(BuildProgressStatus(row.statusLabel, percent, downloadedBytes, fullPath));
         row.statusLabel->SetToolTip(fullPath);
+    } else if (state == RowState::Failed && !detail.empty()) {
+        const wxString fullError = status + ": " + detail;
+        row.statusLabel->SetLabelText(
+            EllipsizeText(row.statusLabel, fullError, kStatusLabelWidth, wxELLIPSIZE_END));
+        row.statusLabel->SetToolTip(fullError);
     } else {
         row.statusLabel->SetLabelText(EllipsizeText(row.statusLabel, status, kStatusLabelWidth, wxELLIPSIZE_END));
         row.statusLabel->UnsetToolTip();
     }
 
-    if (detail.empty()) {
+    if (state == RowState::Failed) {
+        row.detailLabel->SetLabelText(" ");
+        row.detailLabel->UnsetToolTip();
+    } else if (detail.empty()) {
         row.detailLabel->SetLabelText(" ");
         row.detailLabel->UnsetToolTip();
     } else {

@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
-#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
