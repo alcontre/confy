@@ -141,6 +141,9 @@ LoadResult ConfigLoader::LoadFromFile(const std::string& filePath) const {
                 ComponentConfig component;
                 component.name = GetChildValueCI(node, "name");
                 component.displayName = GetChildValueCI(node, "displayname");
+                if (component.displayName.empty()) {
+                    component.displayName = component.name;
+                }
                 component.path = GetChildValueCI(node, "path");
 
                 auto* sourceNode = FindChildCI(node, "source");

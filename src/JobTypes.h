@@ -10,6 +10,7 @@ struct NexusDownloadJob {
     std::uint64_t jobId{0};
     std::size_t componentIndex{0};
     std::string componentName;
+    std::string componentDisplayName;
     std::string repositoryUrl;
     std::string version;
     std::string buildType;

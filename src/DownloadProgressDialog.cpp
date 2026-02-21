@@ -40,7 +40,7 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         auto* contentSizer = new wxBoxSizer(wxVERTICAL);
         auto* mainLineSizer = new wxBoxSizer(wxHORIZONTAL);
 
-        auto* nameLabel = new wxStaticText(this, wxID_ANY, job.componentName);
+        auto* nameLabel = new wxStaticText(this, wxID_ANY, job.componentDisplayName);
         nameLabel->SetMinSize(wxSize(180, -1));
 
         auto* gauge = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(320, -1));

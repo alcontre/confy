@@ -163,7 +163,8 @@ void MainFrame::OnApply(wxCommandEvent&) {
         NexusDownloadJob job;
         job.jobId = nextJobId++;
         job.componentIndex = i;
-        job.componentName = component.displayName.empty() ? component.name : component.displayName;
+        job.componentName = component.name;
+        job.componentDisplayName = component.displayName;
         job.repositoryUrl = component.artifact.url;
         job.version = component.artifact.version;
         job.buildType = component.artifact.buildType;
@@ -263,7 +264,7 @@ void MainFrame::RenderConfig() {
 void MainFrame::AddComponentRow(std::size_t componentIndex) {
     auto& component = config_.components[componentIndex];
 
-    const auto displayName = component.displayName.empty() ? component.name : component.displayName;
+    const auto displayName = component.displayName;
     auto* rowBox = new wxStaticBoxSizer(wxVERTICAL,
                                         componentScroll_,
                                         wxString::Format("%s  (%s)", displayName, component.path));
