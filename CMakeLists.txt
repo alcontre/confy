@@ -91,10 +91,14 @@ target_include_directories(confy_auth_credentials_test PRIVATE
 
 add_executable(confy_nexus_client_auth_test
     tests/NexusClientAuthTest.cpp
+    src/NexusClient.cpp
+    src/AuthCredentials.cpp
 )
 target_include_directories(confy_nexus_client_auth_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
 )
+target_link_libraries(confy_nexus_client_auth_test PRIVATE CURL::libcurl)
 
 add_executable(confy_nexus_client_path_segment_test
     tests/NexusClientPathSegmentTest.cpp

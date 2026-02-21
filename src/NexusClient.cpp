@@ -118,20 +118,6 @@ int OnDownloadProgress(void* clientp,
     return 0;
 }
 
-std::string FormatDownloadedSize(std::uint64_t bytes) {
-    constexpr std::uint64_t kKB = 1000ULL;
-    constexpr std::uint64_t kMB = 1000ULL * 1000ULL;
-    if (bytes < kMB) {
-        auto roundedKB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kKB));
-        if (bytes > 0 && roundedKB == 0) {
-            roundedKB = 1;
-        }
-        return std::to_string(roundedKB) + " KB";
-    }
-    const auto roundedMB = static_cast<std::uint64_t>(std::llround(static_cast<double>(bytes) / kMB));
-    return std::to_string(roundedMB) + " MB";
-}
-
 std::string UrlEncode(const std::string& value) {
     std::string out;
     out.reserve(value.size());
@@ -327,6 +313,10 @@ bool ExtractPathFromHref(const std::string& href,
 namespace confy {
 
 NexusClient::NexusClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
+
+std::string NexusClient::BuildCurlUserPwd(const ServerCredentials& creds) {
+    return creds.username + ":" + creds.password;
+}
 
 std::vector<std::string> NexusClient::ExtractImmediateChildDirectories(
     const std::vector<std::string>& directoryPaths,
@@ -615,9 +605,6 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                 cancelRequested,
                 [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
                     currentDownloadedBytes = downloadedBytes;
-                    const int filePercent = totalBytes > 0
-                                                ? static_cast<int>((downloadedBytes * 100ULL) / totalBytes)
-                                                : 0;
                     const double fileProgress = totalBytes > 0
                                                     ? static_cast<double>(downloadedBytes) /
                                                           static_cast<double>(totalBytes)
@@ -625,9 +612,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                     const int overallPercent =
                         static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
                                          static_cast<double>(total));
-                    progress(overallPercent,
-                             "Downloading (" + std::to_string(filePercent) + " %) " + matched.asset.path + " (" +
-                                 FormatDownloadedSize(downloadedBytes) + ")");
+                    progress(overallPercent, downloadedBytes, matched.asset.path);
                 },
                 downloadError)) {
             errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
@@ -638,9 +623,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
 
         ++completed;
         const int overallPercent = static_cast<int>((completed * 100) / total);
-        progress(overallPercent,
-                 "Downloading (100 %) " + matched.asset.path + " (" +
-                     FormatDownloadedSize(currentDownloadedBytes) + ")");
+        progress(overallPercent, currentDownloadedBytes, matched.asset.path);
     }
 
     return true;

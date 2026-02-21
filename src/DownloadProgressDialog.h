@@ -3,6 +3,7 @@
 #include "DownloadWorkerQueue.h"
 #include "JobTypes.h"
 
+#include <cstdint>
 #include <unordered_map>
 #include <vector>
 
@@ -32,6 +33,7 @@ private:
     };
 
     struct ProgressRow {
+        wxWindow* container{nullptr};
         wxStaticText* nameLabel{nullptr};
         wxGauge* gauge{nullptr};
         wxStaticText* statusLabel{nullptr};
@@ -50,6 +52,8 @@ private:
                      RowState state,
                      const wxString& status,
                      int percent,
+                     bool isProgressUpdate = false,
+                     std::uint64_t downloadedBytes = 0,
                      const wxString& detail = wxString());
     void QueueRetry(std::size_t componentIndex);
     void UpdateDialogControls();

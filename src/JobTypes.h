@@ -32,6 +32,7 @@ struct DownloadEvent {
     std::size_t componentIndex{0};
     DownloadEventType type{DownloadEventType::Progress};
     int percent{0};
+    std::uint64_t downloadedBytes{0};
     std::string message;
 };
 

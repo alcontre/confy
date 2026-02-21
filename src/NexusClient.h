@@ -17,7 +17,9 @@ struct NexusArtifactAsset {
 
 class NexusClient final {
 public:
-    using ProgressCallback = std::function<void(int percent, const std::string& message)>;
+    using ProgressCallback = std::function<void(int percent,
+                                                std::uint64_t downloadedBytes,
+                                                const std::string& message)>;
 
     explicit NexusClient(AuthCredentials credentials);
 
@@ -43,9 +45,7 @@ public:
     static std::vector<std::string> ExtractImmediateChildDirectories(
         const std::vector<std::string>& directoryPaths,
         const std::string& parentPath);
-    static std::string BuildCurlUserPwd(const ServerCredentials& creds) {
-        return creds.username + ":" + creds.password;
-    }
+    static std::string BuildCurlUserPwd(const ServerCredentials& creds);
 
 private:
     using DownloadProgressCallback = std::function<void(std::uint64_t downloadedBytes, std::uint64_t totalBytes)>;
