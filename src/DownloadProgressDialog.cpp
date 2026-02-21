@@ -16,7 +16,7 @@
 namespace {
 
 constexpr int kTimerId = wxID_HIGHEST + 250;
-constexpr int kNameLabelWidth = 180;
+constexpr int kNameLabelWidth = 130;
 constexpr int kGaugeWidth = 300;
 constexpr int kStatusLabelWidth = 420;
 constexpr int kDetailLabelWidth = 420;
