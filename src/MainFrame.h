@@ -49,6 +49,8 @@ private:
     void OnUpdateDeselectAll(wxUpdateUIEvent& event);
     void RenderConfig();
     void AddComponentRow(std::size_t componentIndex);
+    void UpdateComboTooltip(wxComboBox* comboBox);
+    void UpdateRowTooltips(std::size_t componentIndex);
     void RefreshRowEnabledState(std::size_t componentIndex);
     void StartMetadataWorkers();
     void StopMetadataWorkers();

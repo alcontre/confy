@@ -31,8 +31,6 @@ constexpr int kIdApply = wxID_HIGHEST + 2;
 constexpr int kIdDeselectAll = wxID_HIGHEST + 3;
 constexpr int kSectionLabelWidth = 64;
 constexpr int kFieldLabelWidth = 72;
-constexpr int kSourceFieldWidth = 300;
-constexpr int kArtifactFieldWidth = 170;
 
 bool HasSource(const confy::ComponentConfig& component) {
     return !component.source.url.empty() || !component.source.branchOrTag.empty() ||
@@ -283,9 +281,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     sourceRow->Add(sourceEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     sourceRow->Add(makeFixedLabel("Branch/Tag", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* sourceBranch = new wxComboBox(componentScroll_, wxID_ANY);
-    sourceBranch->SetMinSize(wxSize(kSourceFieldWidth, -1));
-    sourceRow->Add(sourceBranch, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 0);
-    sourceRow->AddStretchSpacer();
+    sourceRow->Add(sourceBranch, 1, wxRIGHT | wxEXPAND, 0);
     detailsSizer->Add(sourceRow, 0, wxEXPAND | wxBOTTOM, 6);
 
     auto* artifactRow = new wxBoxSizer(wxHORIZONTAL);
@@ -294,13 +290,10 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     artifactRow->Add(artifactEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     artifactRow->Add(makeFixedLabel("Version", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* artifactVersion = new wxComboBox(componentScroll_, wxID_ANY);
-    artifactVersion->SetMinSize(wxSize(kArtifactFieldWidth, -1));
-    artifactRow->Add(artifactVersion, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+    artifactRow->Add(artifactVersion, 1, wxRIGHT | wxEXPAND, 10);
     artifactRow->Add(makeFixedLabel("Build", 44), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* artifactBuildType = new wxComboBox(componentScroll_, wxID_ANY);
-    artifactBuildType->SetMinSize(wxSize(kArtifactFieldWidth, -1));
-    artifactRow->Add(artifactBuildType, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 0);
-    artifactRow->AddStretchSpacer();
+    artifactRow->Add(artifactBuildType, 1, wxRIGHT | wxEXPAND, 0);
     detailsSizer->Add(artifactRow, 0, wxEXPAND);
 
     rowBox->Add(detailsSizer, 1, wxEXPAND);
@@ -328,6 +321,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
         row.artifactBuildType->Append(component.artifact.buildType);
     }
     row.artifactBuildType->SetValue(component.artifact.buildType);
+    UpdateRowTooltips(componentIndex);
 
     row.sourceEnabled->Bind(wxEVT_CHECKBOX, [this, componentIndex](wxCommandEvent&) {
         if (uiUpdating_) {
@@ -346,6 +340,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     row.sourceBranch->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
+        UpdateComboTooltip(rows_[componentIndex].sourceBranch);
         if (uiUpdating_) {
             return;
         }
@@ -354,6 +349,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     row.artifactVersion->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
+        UpdateComboTooltip(rows_[componentIndex].artifactVersion);
         if (uiUpdating_) {
             return;
         }
@@ -361,6 +357,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
             rows_[componentIndex].artifactVersion->GetValue().ToStdString();
     });
     row.artifactVersion->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent&) {
+        UpdateComboTooltip(rows_[componentIndex].artifactVersion);
         if (uiUpdating_) {
             return;
         }
@@ -376,6 +373,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     row.artifactBuildType->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
+        UpdateComboTooltip(rows_[componentIndex].artifactBuildType);
         if (uiUpdating_) {
             return;
         }
@@ -384,6 +382,31 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     });
 
     RefreshRowEnabledState(componentIndex);
+}
+
+void MainFrame::UpdateComboTooltip(wxComboBox* comboBox) {
+    if (comboBox == nullptr) {
+        return;
+    }
+
+    const auto value = comboBox->GetValue();
+    if (value.empty()) {
+        comboBox->UnsetToolTip();
+        return;
+    }
+
+    comboBox->SetToolTip(value);
+}
+
+void MainFrame::UpdateRowTooltips(std::size_t componentIndex) {
+    if (componentIndex >= rows_.size()) {
+        return;
+    }
+
+    const auto& row = rows_[componentIndex];
+    UpdateComboTooltip(row.sourceBranch);
+    UpdateComboTooltip(row.artifactVersion);
+    UpdateComboTooltip(row.artifactBuildType);
 }
 
 void MainFrame::RefreshRowEnabledState(std::size_t componentIndex) {
@@ -606,6 +629,7 @@ void MainFrame::MetadataWorkerLoop() {
                     config_.components[index].artifact.version = versions.front();
                 }
                 uiUpdating_ = false;
+                UpdateComboTooltip(versionBox);
 
                 if (!config_.components[index].artifact.version.empty()) {
                     EnqueueBuildTypeFetch(index, config_.components[index].artifact.version);
@@ -651,6 +675,7 @@ void MainFrame::MetadataWorkerLoop() {
                 config_.components[index].artifact.buildType = buildTypes.front();
             }
             uiUpdating_ = false;
+            UpdateComboTooltip(buildTypeBox);
         });
     }
 }
