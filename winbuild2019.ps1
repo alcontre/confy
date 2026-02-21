@@ -58,7 +58,7 @@ cmake -S $PSScriptRoot -B $buildDir `
     -G 'Visual Studio 16 2019' `
     -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$toolchainFile" `
-    -DVCPKG_TARGET_TRIPLET=x64-windows
+    -DVCPKG_TARGET_TRIPLET=x64-windows-static
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'CMake configure failed.'
     exit 1
