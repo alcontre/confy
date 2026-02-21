@@ -70,6 +70,9 @@ size_t WriteToFile(void* contents, size_t size, size_t nmemb, void* userp) {
 struct DownloadProgressContext {
     std::function<void(std::uint64_t, std::uint64_t)> callback;
     std::atomic<bool>* cancelRequested{nullptr};
+
+    bool initialized{false};
+    std::chrono::steady_clock::time_point lastReportedAt{};
 };
 
 int OnDownloadProgress(void* clientp,
@@ -92,7 +95,26 @@ int OnDownloadProgress(void* clientp,
 
     const auto safeTotal = dltotal > 0 ? static_cast<std::uint64_t>(dltotal) : 0U;
     const auto safeNow = dlnow > 0 ? static_cast<std::uint64_t>(dlnow) : 0U;
-    ctx->callback(safeNow, safeTotal);
+
+    // Rate limit the context callback to avoid overwhelming the UI with
+    // progress updates, but ensure we report at least once at the end
+    const auto now = std::chrono::steady_clock::now();
+    if (!ctx->initialized) {
+        ctx->initialized = true;
+        ctx->lastReportedAt = now;
+        ctx->callback(safeNow, safeTotal);
+        return 0;
+    }
+
+    constexpr auto kMinInterval = std::chrono::milliseconds(250);
+    const bool reachedEnd = safeTotal > 0 && safeNow >= safeTotal;
+    const bool intervalElapsed = (now - ctx->lastReportedAt) >= kMinInterval;
+
+    if (reachedEnd || intervalElapsed) {
+        ctx->lastReportedAt = now;
+        ctx->callback(safeNow, safeTotal);
+    }
+
     return 0;
 }
 
