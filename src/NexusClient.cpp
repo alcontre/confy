@@ -31,11 +31,11 @@ public:
         }
 
         if (level_ == LogLevel::Error) {
-            wxLogError("%s", message);
+            wxLogError(wxString::FromUTF8(message));
             return;
         }
 
-        wxLogMessage("%s", message);
+        wxLogMessage(wxString::FromUTF8(message));
     }
 
     template <typename T>
