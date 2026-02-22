@@ -349,9 +349,6 @@ bool GitClient::ListBranchesAndTags(const std::string& repositoryUrl,
 
     std::string output;
     std::string command = "git ";
-#ifdef _WIN32
-    command += "-c " + EscapeShellArg("http.version=HTTP/1.1") + " ";
-#endif
     if (!authConfigArg.empty()) {
         command += authConfigArg + " ";
     }
@@ -403,9 +400,6 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
 
     std::string output;
     std::string command = "git ";
-#ifdef _WIN32
-    command += "-c " + EscapeShellArg("http.version=HTTP/1.1") + " ";
-#endif
     if (!authConfigArg.empty()) {
         command += authConfigArg + " ";
     }
@@ -432,9 +426,6 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
     }
 
     std::string submoduleCommand = "git ";
-#ifdef _WIN32
-    submoduleCommand += "-c " + EscapeShellArg("http.version=HTTP/1.1") + " ";
-#endif
     if (!authConfigArg.empty()) {
         submoduleCommand += authConfigArg + " ";
     }
