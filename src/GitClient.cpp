@@ -6,13 +6,100 @@
 #include <set>
 #include <sstream>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/wait.h>
 #endif
 
 namespace fs = std::filesystem;
 
 namespace {
+
+#ifdef _WIN32
+bool RunCommandCaptureWindows(const std::string& command,
+                              std::string& output,
+                              std::string& errorMessage) {
+    output.clear();
+
+    SECURITY_ATTRIBUTES securityAttributes{};
+    securityAttributes.nLength = sizeof(securityAttributes);
+    securityAttributes.bInheritHandle = TRUE;
+
+    HANDLE readPipe = nullptr;
+    HANDLE writePipe = nullptr;
+    if (!CreatePipe(&readPipe, &writePipe, &securityAttributes, 0)) {
+        errorMessage = "Failed to create process output pipe.";
+        return false;
+    }
+
+    if (!SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        errorMessage = "Failed to configure process output pipe.";
+        return false;
+    }
+
+    STARTUPINFOA startupInfo{};
+    startupInfo.cb = sizeof(startupInfo);
+    startupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startupInfo.hStdOutput = writePipe;
+    startupInfo.hStdError = writePipe;
+
+    PROCESS_INFORMATION processInfo{};
+    std::string commandLine = "cmd.exe /d /s /c \"" + command + "\"";
+    std::vector<char> commandLineBuffer(commandLine.begin(), commandLine.end());
+    commandLineBuffer.push_back('\0');
+    if (!CreateProcessA(nullptr,
+                        commandLineBuffer.data(),
+                        nullptr,
+                        nullptr,
+                        TRUE,
+                        CREATE_NO_WINDOW,
+                        nullptr,
+                        nullptr,
+                        &startupInfo,
+                        &processInfo)) {
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        errorMessage = "Failed to start process: " + command;
+        return false;
+    }
+
+    CloseHandle(writePipe);
+
+    std::array<char, 512> buffer{};
+    DWORD bytesRead = 0;
+    while (ReadFile(readPipe, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr) &&
+           bytesRead > 0) {
+        output.append(buffer.data(), bytesRead);
+    }
+
+    CloseHandle(readPipe);
+
+    WaitForSingleObject(processInfo.hProcess, INFINITE);
+    DWORD exitCode = 1;
+    if (!GetExitCodeProcess(processInfo.hProcess, &exitCode)) {
+        CloseHandle(processInfo.hThread);
+        CloseHandle(processInfo.hProcess);
+        errorMessage = "Failed to read process exit code: " + command;
+        return false;
+    }
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+
+    if (exitCode != 0) {
+        if (output.empty()) {
+            errorMessage = "Command failed with exit code " + std::to_string(exitCode) + ": " + command;
+        } else {
+            errorMessage = output;
+        }
+        return false;
+    }
+
+    return true;
+}
+#endif
 
 FILE* OpenCommandPipe(const char* command, const char* mode) {
 #ifdef _WIN32
@@ -131,6 +218,9 @@ int GitClient::DecodeExitCode(int rawExitCode) {
 bool GitClient::RunCommandCapture(const std::string& command,
                                   std::string& output,
                                   std::string& errorMessage) {
+#ifdef _WIN32
+    return RunCommandCaptureWindows(command, output, errorMessage);
+#else
     output.clear();
     std::array<char, 512> buffer{};
 
@@ -157,6 +247,7 @@ bool GitClient::RunCommandCapture(const std::string& command,
     }
 
     return true;
+#endif
 }
 
 bool GitClient::BuildAuthConfigArg(const std::string& repositoryUrl,
