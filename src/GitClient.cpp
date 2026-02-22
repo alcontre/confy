@@ -1,12 +1,37 @@
 #include "GitClient.h"
 
 #include <array>
+#include <cstdarg>
 #include <cstdio>
 #include <filesystem>
-#include <iostream>
 #include <set>
 #include <sstream>
 #include <vector>
+
+#if defined(__has_include)
+#if __has_include(<wx/log.h>)
+#include <wx/log.h>
+#define CONFY_HAS_WX_LOG 1
+#endif
+#endif
+
+#ifndef CONFY_HAS_WX_LOG
+namespace {
+
+void FallbackLog(const char* level, const char* format, ...) {
+    std::fprintf(stderr, "[git-client][%s] ", level);
+    va_list args;
+    va_start(args, format);
+    std::vfprintf(stderr, format, args);
+    va_end(args);
+    std::fprintf(stderr, "\n");
+}
+
+}  // namespace
+
+#define wxLogMessage(...) FallbackLog("INFO", __VA_ARGS__)
+#define wxLogError(...) FallbackLog("ERROR", __VA_ARGS__)
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -23,6 +48,7 @@ bool RunCommandCaptureWindows(const std::string& command,
                               std::string& output,
                               std::string& errorMessage) {
     output.clear();
+    wxLogMessage("[git-client] exec: %s", command.c_str());
 
     SECURITY_ATTRIBUTES securityAttributes{};
     securityAttributes.nLength = sizeof(securityAttributes);
@@ -32,6 +58,7 @@ bool RunCommandCaptureWindows(const std::string& command,
     HANDLE writePipe = nullptr;
     if (!CreatePipe(&readPipe, &writePipe, &securityAttributes, 0)) {
         errorMessage = "Failed to create process output pipe.";
+        wxLogError("[git-client] create pipe failed");
         return false;
     }
 
@@ -39,6 +66,7 @@ bool RunCommandCaptureWindows(const std::string& command,
         CloseHandle(readPipe);
         CloseHandle(writePipe);
         errorMessage = "Failed to configure process output pipe.";
+        wxLogError("[git-client] set handle information failed");
         return false;
     }
 
@@ -65,6 +93,7 @@ bool RunCommandCaptureWindows(const std::string& command,
         CloseHandle(readPipe);
         CloseHandle(writePipe);
         errorMessage = "Failed to start process: " + command;
+        wxLogError("[git-client] failed to start process");
         return false;
     }
 
@@ -85,10 +114,16 @@ bool RunCommandCaptureWindows(const std::string& command,
         CloseHandle(processInfo.hThread);
         CloseHandle(processInfo.hProcess);
         errorMessage = "Failed to read process exit code: " + command;
+        wxLogError("[git-client] failed to read process exit code");
         return false;
     }
     CloseHandle(processInfo.hThread);
     CloseHandle(processInfo.hProcess);
+
+    wxLogMessage("[git-client] exit=%lu", static_cast<unsigned long>(exitCode));
+    if (!output.empty()) {
+        wxLogMessage("[git-client] output:\n%s", output.c_str());
+    }
 
     if (exitCode != 0) {
         if (output.empty()) {
@@ -96,6 +131,7 @@ bool RunCommandCaptureWindows(const std::string& command,
         } else {
             errorMessage = output;
         }
+        wxLogError("[git-client] command failed");
         return false;
     }
 
@@ -238,11 +274,11 @@ bool GitClient::RunCommandCapture(const std::string& command,
     std::array<char, 512> buffer{};
 
     const std::string fullCommand = command + " 2>&1";
-    std::cout << "[git-client] exec: " << fullCommand << std::endl;
+    wxLogMessage("[git-client] exec: %s", fullCommand.c_str());
     FILE* pipe = OpenCommandPipe(fullCommand.c_str(), "r");
     if (pipe == nullptr) {
         errorMessage = "Failed to start process: " + command;
-        std::cerr << "[git-client] failed to open process pipe" << std::endl;
+        wxLogError("[git-client] failed to open process pipe");
         return false;
     }
 
@@ -252,9 +288,9 @@ bool GitClient::RunCommandCapture(const std::string& command,
 
     const int rawExit = CloseCommandPipe(pipe);
     const int exitCode = DecodeExitCode(rawExit);
-    std::cout << "[git-client] exit=" << exitCode << std::endl;
+    wxLogMessage("[git-client] exit=%d", exitCode);
     if (!output.empty()) {
-        std::cout << "[git-client] output:\n" << output << std::endl;
+        wxLogMessage("[git-client] output:\n%s", output.c_str());
     }
     if (exitCode != 0) {
         if (output.empty()) {
@@ -262,7 +298,7 @@ bool GitClient::RunCommandCapture(const std::string& command,
         } else {
             errorMessage = output;
         }
-        std::cerr << "[git-client] command failed" << std::endl;
+        wxLogError("[git-client] command failed");
         return false;
     }
 
