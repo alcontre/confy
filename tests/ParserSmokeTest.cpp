@@ -37,7 +37,10 @@ int main(int argc, char** argv) {
 
     const auto& first = model.components[0];
     if (!Check(first.name == "my_name", "First component name mismatch")) return 1;
-    if (!Check(first.displayName == "My Name", "First display name mismatch")) return 1;
+    if (!Check(first.displayName == "My Name is very very very very very very long",
+               "First display name mismatch")) {
+        return 1;
+    }
     if (!Check(first.source.enabled, "First source should be enabled")) return 1;
     if (!Check(first.artifact.enabled, "First artifact should be enabled")) return 1;
     if (!Check(first.source.branchOrTag == "master", "First source branch mismatch")) return 1;
@@ -51,6 +54,7 @@ int main(int argc, char** argv) {
     const auto& second = model.components[1];
     if (!Check(second.name == "only_source", "Second component name mismatch")) return 1;
     if (!Check(second.source.enabled, "Second source should be enabled")) return 1;
+    if (!Check(!second.source.shallow, "Second source should disable shallow clone via NoShallow")) return 1;
     if (!Check(!second.artifact.enabled, "Second artifact should be disabled")) return 1;
 
     const auto& last = model.components[11];

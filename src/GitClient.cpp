@@ -3,8 +3,10 @@
 #include <array>
 #include <cstdio>
 #include <filesystem>
+#include <iostream>
 #include <set>
 #include <sstream>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -101,6 +103,13 @@ bool RunCommandCaptureWindows(const std::string& command,
 }
 #endif
 
+std::string NormalizeRepositoryUrl(std::string repositoryUrl) {
+    while (repositoryUrl.size() > 1 && repositoryUrl.back() == '/') {
+        repositoryUrl.pop_back();
+    }
+    return repositoryUrl;
+}
+
 FILE* OpenCommandPipe(const char* command, const char* mode) {
 #ifdef _WIN32
     return _popen(command, mode);
@@ -174,11 +183,15 @@ std::vector<std::string> GitClient::ParseLsRemoteRefs(const std::string& lsRemot
 std::string GitClient::EscapeShellArg(const std::string& value) {
 #ifdef _WIN32
     std::string escaped;
-    escaped.reserve(value.size() + 2);
+    escaped.reserve(value.size() * 2 + 2);
     escaped.push_back('"');
     for (char c : value) {
         if (c == '"') {
             escaped += "\\\"";
+            continue;
+        }
+        if (c == '%') {
+            escaped += "%%";
             continue;
         }
         escaped.push_back(c);
@@ -225,9 +238,11 @@ bool GitClient::RunCommandCapture(const std::string& command,
     std::array<char, 512> buffer{};
 
     const std::string fullCommand = command + " 2>&1";
+    std::cout << "[git-client] exec: " << fullCommand << std::endl;
     FILE* pipe = OpenCommandPipe(fullCommand.c_str(), "r");
     if (pipe == nullptr) {
         errorMessage = "Failed to start process: " + command;
+        std::cerr << "[git-client] failed to open process pipe" << std::endl;
         return false;
     }
 
@@ -237,12 +252,17 @@ bool GitClient::RunCommandCapture(const std::string& command,
 
     const int rawExit = CloseCommandPipe(pipe);
     const int exitCode = DecodeExitCode(rawExit);
+    std::cout << "[git-client] exit=" << exitCode << std::endl;
+    if (!output.empty()) {
+        std::cout << "[git-client] output:\n" << output << std::endl;
+    }
     if (exitCode != 0) {
         if (output.empty()) {
             errorMessage = "Command failed with exit code " + std::to_string(exitCode) + ": " + command;
         } else {
             errorMessage = output;
         }
+        std::cerr << "[git-client] command failed" << std::endl;
         return false;
     }
 
@@ -284,18 +304,22 @@ bool GitClient::ListBranchesAndTags(const std::string& repositoryUrl,
                                     std::vector<std::string>& outRefs,
                                     std::string& errorMessage) const {
     outRefs.clear();
+    const std::string normalizedRepositoryUrl = NormalizeRepositoryUrl(repositoryUrl);
 
     std::string authConfigArg;
-    if (!BuildAuthConfigArg(repositoryUrl, authConfigArg, errorMessage)) {
+    if (!BuildAuthConfigArg(normalizedRepositoryUrl, authConfigArg, errorMessage)) {
         return false;
     }
 
     std::string output;
     std::string command = "git ";
+#ifdef _WIN32
+    command += "-c " + EscapeShellArg("http.version=HTTP/1.1") + " ";
+#endif
     if (!authConfigArg.empty()) {
         command += authConfigArg + " ";
     }
-    command += "ls-remote --heads --tags " + EscapeShellArg(repositoryUrl);
+    command += "ls-remote --heads --tags " + EscapeShellArg(normalizedRepositoryUrl);
     if (!RunCommandCapture(command, output, errorMessage)) {
         return false;
     }
@@ -311,13 +335,15 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
                                 std::atomic<bool>& cancelRequested,
                                 ProgressCallback progress,
                                 std::string& errorMessage) const {
+    const std::string normalizedRepositoryUrl = NormalizeRepositoryUrl(repositoryUrl);
+
     if (cancelRequested.load()) {
         errorMessage = "Cancelled";
         return false;
     }
 
     std::string authConfigArg;
-    if (!BuildAuthConfigArg(repositoryUrl, authConfigArg, errorMessage)) {
+    if (!BuildAuthConfigArg(normalizedRepositoryUrl, authConfigArg, errorMessage)) {
         return false;
     }
 
@@ -341,6 +367,9 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
 
     std::string output;
     std::string command = "git ";
+#ifdef _WIN32
+    command += "-c " + EscapeShellArg("http.version=HTTP/1.1") + " ";
+#endif
     if (!authConfigArg.empty()) {
         command += authConfigArg + " ";
     }
@@ -351,7 +380,7 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
     if (!branchOrTag.empty()) {
         command += "--branch " + EscapeShellArg(branchOrTag) + " ";
     }
-    command += EscapeShellArg(repositoryUrl) + " " + EscapeShellArg(targetDirectory);
+    command += EscapeShellArg(normalizedRepositoryUrl) + " " + EscapeShellArg(targetDirectory);
 
     if (!RunCommandCapture(command, output, errorMessage)) {
         return false;
@@ -367,6 +396,9 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
     }
 
     std::string submoduleCommand = "git ";
+#ifdef _WIN32
+    submoduleCommand += "-c " + EscapeShellArg("http.version=HTTP/1.1") + " ";
+#endif
     if (!authConfigArg.empty()) {
         submoduleCommand += authConfigArg + " ";
     }

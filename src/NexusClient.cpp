@@ -5,13 +5,42 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdarg>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <regex>
 #include <thread>
 #include <unordered_set>
 #include <vector>
+
+#if defined(__has_include)
+#if __has_include(<wx/log.h>)
 #include <wx/log.h>
+#define CONFY_HAS_WX_LOG 1
+#endif
+#endif
+
+#ifndef CONFY_HAS_WX_LOG
+namespace {
+
+void FallbackLog(const char* level, const char* format, ...) {
+    std::fprintf(stderr, "[nexus][%s] ", level);
+
+    va_list args;
+    va_start(args, format);
+    std::vfprintf(stderr, format, args);
+    va_end(args);
+
+    std::fprintf(stderr, "\n");
+}
+
+}  // namespace
+
+#define wxLogMessage(...) FallbackLog("INFO", __VA_ARGS__)
+#define wxLogWarning(...) FallbackLog("WARN", __VA_ARGS__)
+#define wxLogError(...) FallbackLog("ERROR", __VA_ARGS__)
+#endif
 
 namespace fs = std::filesystem;
 
