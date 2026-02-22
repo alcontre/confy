@@ -5,9 +5,32 @@
 #include <filesystem>
 #include <set>
 #include <sstream>
+
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 
 namespace fs = std::filesystem;
+
+namespace {
+
+FILE* OpenCommandPipe(const char* command, const char* mode) {
+#ifdef _WIN32
+    return _popen(command, mode);
+#else
+    return popen(command, mode);
+#endif
+}
+
+int CloseCommandPipe(FILE* pipe) {
+#ifdef _WIN32
+    return _pclose(pipe);
+#else
+    return pclose(pipe);
+#endif
+}
+
+}  // namespace
 
 namespace confy {
 
@@ -114,7 +137,7 @@ bool GitClient::RunCommandCapture(const std::string& command,
     std::array<char, 512> buffer{};
 
     const std::string fullCommand = command + " 2>&1";
-    FILE* pipe = popen(fullCommand.c_str(), "r");
+    FILE* pipe = OpenCommandPipe(fullCommand.c_str(), "r");
     if (pipe == nullptr) {
         errorMessage = "Failed to start process: " + command;
         return false;
@@ -124,7 +147,7 @@ bool GitClient::RunCommandCapture(const std::string& command,
         output.append(buffer.data());
     }
 
-    const int rawExit = pclose(pipe);
+    const int rawExit = CloseCommandPipe(pipe);
     const int exitCode = DecodeExitCode(rawExit);
     if (exitCode != 0) {
         if (output.empty()) {
