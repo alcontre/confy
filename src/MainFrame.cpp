@@ -5,6 +5,7 @@
 #include "ConfigLoader.h"
 #include "DebugConsole.h"
 #include "DownloadProgressDialog.h"
+#include "GitClient.h"
 #include "NexusClient.h"
 
 #include <wx/button.h>
@@ -190,34 +191,46 @@ void MainFrame::LoadConfigFromPath(const wxString& path) {
 }
 
 void MainFrame::OnApply(wxCommandEvent&) {
-    std::vector<NexusDownloadJob> jobs;
+    std::vector<DownloadJob> jobs;
     jobs.reserve(config_.components.size());
 
     static std::uint64_t nextJobId = 1;
 
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
         const auto& component = config_.components[i];
-        if (!HasArtifact(component) || !component.artifact.enabled) {
-            continue;
+
+        if (HasSource(component) && component.source.enabled && !component.source.url.empty()) {
+            GitCloneJob sourceJob;
+            sourceJob.jobId = nextJobId++;
+            sourceJob.componentIndex = i;
+            sourceJob.componentName = component.name;
+            sourceJob.componentDisplayName = component.displayName;
+            sourceJob.repositoryUrl = component.source.url;
+            sourceJob.branchOrTag = component.source.branchOrTag;
+            sourceJob.targetDirectory = (std::filesystem::path(config_.rootPath) / component.path).string();
+            sourceJob.shallow = component.source.shallow;
+            jobs.push_back(DownloadJob::FromSource(std::move(sourceJob)));
         }
 
-        NexusDownloadJob job;
-        job.jobId = nextJobId++;
-        job.componentIndex = i;
-        job.componentName = component.name;
-        job.componentDisplayName = component.displayName;
-        job.repositoryUrl = component.artifact.url;
-        job.version = component.artifact.version;
-        job.buildType = component.artifact.buildType;
-        job.targetDirectory = (std::filesystem::path(config_.rootPath) / component.path).string();
-        job.regexIncludes = component.artifact.regexIncludes;
-        job.regexExcludes = component.artifact.regexExcludes;
+        if (HasArtifact(component) && component.artifact.enabled) {
+            NexusDownloadJob artifactJob;
+            artifactJob.jobId = nextJobId++;
+            artifactJob.componentIndex = i;
+            artifactJob.componentName = component.name;
+            artifactJob.componentDisplayName = component.displayName;
+            artifactJob.repositoryUrl = component.artifact.url;
+            artifactJob.version = component.artifact.version;
+            artifactJob.buildType = component.artifact.buildType;
+            artifactJob.targetDirectory = (std::filesystem::path(config_.rootPath) / component.path).string();
+            artifactJob.regexIncludes = component.artifact.regexIncludes;
+            artifactJob.regexExcludes = component.artifact.regexExcludes;
 
-        jobs.push_back(std::move(job));
+            jobs.push_back(DownloadJob::FromArtifact(std::move(artifactJob)));
+        }
     }
 
     if (jobs.empty()) {
-        wxMessageBox("No artifact download jobs are enabled.", "Nothing to download", wxOK | wxICON_INFORMATION, this);
+        wxMessageBox("No source/artifact jobs are enabled.", "Nothing to do", wxOK | wxICON_INFORMATION, this);
         return;
     }
 
@@ -292,10 +305,13 @@ void MainFrame::RenderConfig() {
     rows_.reserve(config_.components.size());
     metadataState_.clear();
     metadataState_.resize(config_.components.size());
+    componentSourceRequests_.clear();
+    componentSourceRequests_.resize(config_.components.size());
     componentArtifactRequests_.clear();
     componentArtifactRequests_.resize(config_.components.size());
 
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        componentSourceRequests_[i] = config_.components[i].source.url;
         componentArtifactRequests_[i] = {config_.components[i].artifact.url, config_.components[i].name};
         AddComponentRow(i);
     }
@@ -315,6 +331,9 @@ void MainFrame::RenderConfig() {
 
     StartMetadataWorkers();
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
+        if (HasSource(config_.components[i]) && !config_.components[i].source.url.empty()) {
+            EnqueueSourceRefsFetch(i, false);
+        }
         if (HasArtifact(config_.components[i]) && !config_.components[i].artifact.url.empty()) {
             EnqueueVersionFetch(i, false);
         }
@@ -342,6 +361,8 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     sourceRow->Add(makeFixedLabel("Source", kSectionLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
     auto* sourceEnabled = new wxCheckBox(rowParent, wxID_ANY, "Enable");
     sourceRow->Add(sourceEnabled, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+    auto* sourceShallow = new wxCheckBox(rowParent, wxID_ANY, "Shallow");
+    sourceRow->Add(sourceShallow, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     sourceRow->Add(makeFixedLabel("Branch/Tag", kFieldLabelWidth), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     auto* sourceBranch = new wxComboBox(rowParent, wxID_ANY);
     sourceRow->Add(sourceBranch, 1, wxRIGHT | wxEXPAND, 0);
@@ -364,6 +385,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
     ComponentRowWidgets row;
     row.sourceEnabled = sourceEnabled;
+    row.sourceShallow = sourceShallow;
     row.sourceBranch = sourceBranch;
     row.artifactEnabled = artifactEnabled;
     row.artifactVersion = artifactVersion;
@@ -374,6 +396,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
         row.sourceBranch->Append(component.source.branchOrTag);
     }
     row.sourceBranch->SetValue(component.source.branchOrTag);
+    row.sourceShallow->SetValue(component.source.shallow);
 
     if (!component.artifact.version.empty()) {
         row.artifactVersion->Append(component.artifact.version);
@@ -394,6 +417,13 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
         RefreshRowEnabledState(componentIndex);
     });
 
+    row.sourceShallow->Bind(wxEVT_CHECKBOX, [this, componentIndex](wxCommandEvent&) {
+        if (uiUpdating_) {
+            return;
+        }
+        config_.components[componentIndex].source.shallow = rows_[componentIndex].sourceShallow->GetValue();
+    });
+
     row.artifactEnabled->Bind(wxEVT_CHECKBOX, [this, componentIndex](wxCommandEvent&) {
         if (uiUpdating_) {
             return;
@@ -409,6 +439,12 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
         }
         config_.components[componentIndex].source.branchOrTag =
             rows_[componentIndex].sourceBranch->GetValue().ToStdString();
+    });
+    row.sourceBranch->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, componentIndex](wxCommandEvent&) {
+        if (uiUpdating_) {
+            return;
+        }
+        EnqueueSourceRefsFetch(componentIndex, true);
     });
 
     row.artifactVersion->Bind(wxEVT_TEXT, [this, componentIndex](wxCommandEvent&) {
@@ -481,12 +517,55 @@ void MainFrame::RefreshRowEnabledState(std::size_t componentIndex) {
 
     row.sourceEnabled->Enable(sourceExists);
     row.sourceEnabled->SetValue(sourceExists && component.source.enabled);
+    row.sourceShallow->Enable(sourceExists && component.source.enabled);
+    row.sourceShallow->SetValue(component.source.shallow);
     row.sourceBranch->Enable(sourceExists && component.source.enabled);
 
     row.artifactEnabled->Enable(artifactExists);
     row.artifactEnabled->SetValue(artifactExists && component.artifact.enabled);
     row.artifactVersion->Enable(artifactExists && component.artifact.enabled);
     row.artifactBuildType->Enable(artifactExists && component.artifact.enabled);
+}
+
+void MainFrame::EnqueueSourceRefsFetch(std::size_t componentIndex, bool prioritize) {
+    if (componentIndex >= config_.components.size() || componentIndex >= metadataState_.size()) {
+        return;
+    }
+    if (!HasSource(config_.components[componentIndex]) || config_.components[componentIndex].source.url.empty()) {
+        return;
+    }
+    if (metadataState_[componentIndex].sourceRefsLoaded && !prioritize) {
+        return;
+    }
+
+    MetadataTask task;
+    task.type = MetadataTaskType::SourceRefs;
+    task.componentIndex = componentIndex;
+    const auto key = "s:" + std::to_string(componentIndex);
+
+    {
+        std::scoped_lock lock(metadataMutex_);
+        if (metadataTaskKeys_.find(key) != metadataTaskKeys_.end()) {
+            if (!prioritize) {
+                return;
+            }
+            for (auto it = metadataTasks_.begin(); it != metadataTasks_.end(); ++it) {
+                if (it->type == MetadataTaskType::SourceRefs && it->componentIndex == componentIndex) {
+                    std::rotate(metadataTasks_.begin(), it, it + 1);
+                    break;
+                }
+            }
+            metadataCv_.notify_one();
+            return;
+        }
+        if (prioritize) {
+            metadataTasks_.push_front(task);
+        } else {
+            metadataTasks_.push_back(task);
+        }
+        metadataTaskKeys_.insert(key);
+    }
+    metadataCv_.notify_one();
 }
 
 void MainFrame::StartMetadataWorkers() {
@@ -613,26 +692,40 @@ void MainFrame::MetadataWorkerLoop() {
             }
             task = metadataTasks_.front();
             metadataTasks_.pop_front();
-            if (task.type == MetadataTaskType::Versions) {
+            if (task.type == MetadataTaskType::SourceRefs) {
+                metadataTaskKeys_.erase("s:" + std::to_string(task.componentIndex));
+            } else if (task.type == MetadataTaskType::Versions) {
                 metadataTaskKeys_.erase("v:" + std::to_string(task.componentIndex));
             } else {
                 metadataTaskKeys_.erase("b:" + std::to_string(task.componentIndex) + ":" + task.version);
             }
         }
 
-        if (task.componentIndex >= componentArtifactRequests_.size()) {
+        if (task.type == MetadataTaskType::SourceRefs && task.componentIndex >= componentSourceRequests_.size()) {
             continue;
         }
-        const auto request = componentArtifactRequests_[task.componentIndex];
-        if (request.first.empty() || request.second.empty()) {
-            continue;
+        std::pair<std::string, std::string> request;
+        if (task.type != MetadataTaskType::SourceRefs) {
+            if (task.componentIndex >= componentArtifactRequests_.size()) {
+                continue;
+            }
+            request = componentArtifactRequests_[task.componentIndex];
+            if (request.first.empty() || request.second.empty()) {
+                continue;
+            }
         }
 
         if (task.componentIndex >= metadataState_.size()) {
             continue;
         }
 
-        if (task.type == MetadataTaskType::Versions) {
+        if (task.type == MetadataTaskType::SourceRefs) {
+            CallAfter([this, index = task.componentIndex]() {
+                if (index < metadataState_.size()) {
+                    metadataState_[index].sourceRefsLoading = true;
+                }
+            });
+        } else if (task.type == MetadataTaskType::Versions) {
             CallAfter([this, index = task.componentIndex]() {
                 if (index < metadataState_.size()) {
                     metadataState_[index].versionsLoading = true;
@@ -647,12 +740,75 @@ void MainFrame::MetadataWorkerLoop() {
         }
 
         if (settingsPath.empty()) {
+            if (task.type == MetadataTaskType::SourceRefs) {
+                CallAfter([this, index = task.componentIndex]() {
+                    if (index < metadataState_.size()) {
+                        metadataState_[index].sourceRefsLoading = false;
+                    }
+                });
+            } else if (task.type == MetadataTaskType::Versions) {
+                CallAfter([this, index = task.componentIndex]() {
+                    if (index < metadataState_.size()) {
+                        metadataState_[index].versionsLoading = false;
+                    }
+                });
+            } else {
+                CallAfter([this, index = task.componentIndex, version = task.version]() {
+                    if (index < metadataState_.size()) {
+                        metadataState_[index].buildTypesLoadingVersions.erase(version);
+                    }
+                });
+            }
             continue;
         }
 
         AuthCredentials credentials;
         std::string authError;
         if (!credentials.LoadFromM2SettingsXml(settingsPath, authError)) {
+            if (task.type == MetadataTaskType::SourceRefs) {
+                CallAfter([this, index = task.componentIndex]() {
+                    if (index < metadataState_.size()) {
+                        metadataState_[index].sourceRefsLoading = false;
+                    }
+                });
+            }
+            continue;
+        }
+
+        if (task.type == MetadataTaskType::SourceRefs) {
+            std::vector<std::string> refs;
+            std::string errorMessage;
+            GitClient client(std::move(credentials));
+            const auto ok = client.ListBranchesAndTags(componentSourceRequests_[task.componentIndex], refs, errorMessage);
+            CallAfter([this, index = task.componentIndex, refs = std::move(refs), ok]() mutable {
+                if (index >= metadataState_.size() || index >= rows_.size() || index >= config_.components.size()) {
+                    return;
+                }
+
+                auto& state = metadataState_[index];
+                state.sourceRefsLoading = false;
+                state.sourceRefsLoaded = ok;
+                if (!ok) {
+                    return;
+                }
+
+                auto* sourceBranch = rows_[index].sourceBranch;
+                const auto previousSelection = sourceBranch->GetValue().ToStdString();
+
+                uiUpdating_ = true;
+                sourceBranch->Clear();
+                for (const auto& ref : refs) {
+                    sourceBranch->Append(ref);
+                }
+                if (!previousSelection.empty()) {
+                    sourceBranch->SetValue(previousSelection);
+                } else if (!refs.empty()) {
+                    sourceBranch->SetValue(refs.front());
+                    config_.components[index].source.branchOrTag = refs.front();
+                }
+                uiUpdating_ = false;
+                UpdateComboTooltip(*sourceBranch);
+            });
             continue;
         }
 

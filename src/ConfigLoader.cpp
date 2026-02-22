@@ -151,6 +151,7 @@ LoadResult ConfigLoader::LoadFromFile(const std::string& filePath) const {
                     component.source.enabled = HasChildCI(sourceNode, "isenabled");
                     component.source.url = GetChildValueCI(sourceNode, "url");
                     component.source.branchOrTag = GetChildValueCI(sourceNode, "branchortag");
+                    component.source.shallow = !HasChildCI(sourceNode, "noshallow");
                     component.source.script = GetChildValueCI(sourceNode, "script");
                 }
 

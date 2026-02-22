@@ -33,6 +33,7 @@ set(CONFY_SOURCES
     src/DownloadWorkerQueue.cpp
     src/DownloadProgressDialog.cpp
     src/NexusClient.cpp
+    src/GitClient.cpp
     src/AuthCredentials.cpp
 )
 
@@ -47,6 +48,7 @@ set(CONFY_HEADERS
     src/DownloadWorkerQueue.h
     src/DownloadProgressDialog.h
     src/NexusClient.h
+    src/GitClient.h
     src/AuthCredentials.h
 )
 
@@ -113,6 +115,16 @@ target_include_directories(confy_nexus_client_path_segment_test PRIVATE
 )
 target_link_libraries(confy_nexus_client_path_segment_test PRIVATE CURL::libcurl)
 
+add_executable(confy_git_client_test
+    tests/GitClientTest.cpp
+    src/GitClient.cpp
+    src/AuthCredentials.cpp
+)
+target_include_directories(confy_git_client_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+)
+
 enable_testing()
 add_test(
     NAME parser_smoke
@@ -137,6 +149,11 @@ add_test(
 add_test(
     NAME nexus_client_path_segment
     COMMAND confy_nexus_client_path_segment_test
+)
+
+add_test(
+    NAME git_client
+    COMMAND confy_git_client_test
 )
 
 if(MSVC)

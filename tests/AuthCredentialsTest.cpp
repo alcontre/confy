@@ -48,6 +48,10 @@ int main() {
       <username>alice</username>
       <password>secret</password>
     </server>
+    <server>
+      <id>bitbucket.internal:7990</id>
+      <password>token-only-value</password>
+    </server>
   </servers>
 </settings>
 )XML";
@@ -79,6 +83,13 @@ int main() {
     if (!Check(creds.password == "bb", "Expected password bb")) return 1;
 
     if (!Check(!auth.TryGetForHost("missing-host:1234", creds), "Expected unknown host lookup to fail")) return 1;
+
+    if (!Check(auth.TryGetByServerId("bitbucket.internal:7990", creds),
+           "Expected token-only server-id lookup to succeed")) {
+      return 1;
+    }
+    if (!Check(creds.username.empty(), "Expected empty username for token-only server entry")) return 1;
+    if (!Check(creds.password == "token-only-value", "Expected token-only password value")) return 1;
 
     confy::AuthCredentials badAuth;
     std::string badError;

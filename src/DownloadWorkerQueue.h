@@ -19,13 +19,14 @@ public:
 
     void Start();
     void Stop();
-    void Submit(NexusDownloadJob job);
+    void Submit(DownloadJob job);
     void RequestCancelAll();
     bool TryPopEvent(DownloadEvent& outEvent);
 
 private:
     void WorkerLoop();
     void PushEvent(DownloadEvent event);
+    void ProcessJob(const DownloadJob& job);
     void ProcessJob(const NexusDownloadJob& job);
 
     std::size_t workerCount_{0};
@@ -33,7 +34,7 @@ private:
 
     std::mutex queueMutex_;
     std::condition_variable queueCv_;
-    std::queue<NexusDownloadJob> pendingJobs_;
+    std::queue<DownloadJob> pendingJobs_;
 
     std::mutex eventMutex_;
     std::queue<DownloadEvent> events_;

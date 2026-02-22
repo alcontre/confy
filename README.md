@@ -9,6 +9,9 @@ Cross-platform C++17/wxWidgets desktop app for loading an XML config and downloa
 - Basic component checklist rendering
 - Initial XML parsing into a strongly-typed model
 - Debug Console window (`View -> Debug Console`) for runtime app logs
+- Source fetch support using `git` (Bitbucket DC HTTPS + `.m2/settings.xml` credentials)
+- Source branch/tag dropdown population from remote refs
+- Recursive clone/submodule handling with shallow-by-default behavior (`<NoShallow/>` for deep clone)
 
 ## Build
 

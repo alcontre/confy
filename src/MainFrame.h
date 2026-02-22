@@ -36,6 +36,7 @@ public:
 private:
     struct ComponentRowWidgets {
         wxCheckBox* sourceEnabled{nullptr};
+        wxCheckBox* sourceShallow{nullptr};
         wxComboBox* sourceBranch{nullptr};
         wxCheckBox* artifactEnabled{nullptr};
         wxComboBox* artifactVersion{nullptr};
@@ -63,15 +64,18 @@ private:
     void StopMetadataWorkers();
     void EnqueueVersionFetch(std::size_t componentIndex, bool prioritize);
     void EnqueueBuildTypeFetch(std::size_t componentIndex, const std::string& version);
+    void EnqueueSourceRefsFetch(std::size_t componentIndex, bool prioritize);
     void MetadataWorkerLoop();
 
-    enum class MetadataTaskType { Versions, BuildTypes };
+    enum class MetadataTaskType { SourceRefs, Versions, BuildTypes };
     struct MetadataTask {
         MetadataTaskType type{MetadataTaskType::Versions};
         std::size_t componentIndex{0};
         std::string version;
     };
     struct ComponentMetadataState {
+        bool sourceRefsLoading{false};
+        bool sourceRefsLoaded{false};
         bool versionsLoading{false};
         bool versionsLoaded{false};
         std::unordered_map<std::string, std::vector<std::string>> buildTypesByVersion;
@@ -89,6 +93,7 @@ private:
     wxButton* applyButton_{nullptr};
     std::vector<ComponentRowWidgets> rows_;
     std::vector<ComponentMetadataState> metadataState_;
+    std::vector<std::string> componentSourceRequests_;
     std::vector<std::pair<std::string, std::string>> componentArtifactRequests_;
     std::string loadedConfigPath_;
     bool uiUpdating_{false};

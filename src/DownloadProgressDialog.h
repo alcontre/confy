@@ -20,7 +20,7 @@ namespace confy {
 
 class DownloadProgressDialog final : public wxDialog {
 public:
-    DownloadProgressDialog(wxWindow* parent, std::vector<NexusDownloadJob> jobs);
+    DownloadProgressDialog(wxWindow* parent, std::vector<DownloadJob> jobs);
     ~DownloadProgressDialog() override;
 
 private:
@@ -60,7 +60,7 @@ private:
     bool HasActiveJobs() const;
     bool HasFailedJobs() const;
 
-    std::vector<NexusDownloadJob> jobs_;
+    std::vector<DownloadJob> jobs_;
     std::vector<ProgressRow> rows_;
     std::unordered_map<std::size_t, std::size_t> rowIndexByComponent_;
 

@@ -77,7 +77,7 @@ bool AuthCredentials::LoadFromM2SettingsXml(const std::string& filePath, std::st
             const auto user = ValueOf(server, "username");
             const auto pass = ValueOf(server, "password");
 
-            if (id.empty() || user.empty()) {
+            if (id.empty() || pass.empty()) {
                 continue;
             }
 
@@ -97,7 +97,11 @@ bool AuthCredentials::LoadFromM2SettingsXml(const std::string& filePath, std::st
 }
 
 bool AuthCredentials::TryGetForHost(const std::string& hostPort, ServerCredentials& out) const {
-    const auto it = credentialsByHostPort_.find(hostPort);
+    return TryGetByServerId(hostPort, out);
+}
+
+bool AuthCredentials::TryGetByServerId(const std::string& serverId, ServerCredentials& out) const {
+    const auto it = credentialsByHostPort_.find(serverId);
     if (it == credentialsByHostPort_.end()) {
         return false;
     }

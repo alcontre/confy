@@ -9,6 +9,7 @@ struct SourceConfig {
     bool enabled{false};
     std::string url;
     std::string branchOrTag;
+    bool shallow{true};
     std::string script;
 };
 

@@ -79,7 +79,7 @@ wxString BuildProgressStatus(wxStaticText* label,
 
 namespace confy {
 
-DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<NexusDownloadJob> jobs)
+DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<DownloadJob> jobs)
     : wxDialog(parent,
                wxID_ANY,
                "Download Progress",
@@ -107,6 +107,10 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
 
     for (std::size_t i = 0; i < jobs_.size(); ++i) {
         const auto& job = jobs_[i];
+        const auto displayName = job.kind == DownloadJobKind::NexusArtifact ? job.artifact.componentDisplayName
+                                                                            : job.source.componentDisplayName;
+        const auto componentIndex = job.kind == DownloadJobKind::NexusArtifact ? job.artifact.componentIndex
+                                                                                : job.source.componentIndex;
 
         auto* rowPanel = new wxPanel(rowsPanel);
         rowPanel->SetMinSize(wxSize(-1, kRowMinHeight));
@@ -115,7 +119,7 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         auto* contentSizer = new wxBoxSizer(wxVERTICAL);
         auto* mainLineSizer = new wxBoxSizer(wxHORIZONTAL);
 
-        auto* nameLabel = new wxStaticText(rowPanel, wxID_ANY, job.componentDisplayName);
+        auto* nameLabel = new wxStaticText(rowPanel, wxID_ANY, displayName);
         nameLabel->SetMinSize(wxSize(kNameLabelWidth, -1));
 
         auto* gauge = new wxGauge(rowPanel, wxID_ANY, 100, wxDefaultPosition, wxSize(kGaugeWidth, -1));
@@ -150,10 +154,10 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Nex
         row.retryButton = retryButton;
 
         rows_.push_back(row);
-        rowIndexByComponent_[job.componentIndex] = i;
+        rowIndexByComponent_[componentIndex] = i;
 
         retryButton->Bind(wxEVT_BUTTON,
-                          [this, componentIndex = job.componentIndex](wxCommandEvent&) {
+                          [this, componentIndex](wxCommandEvent&) {
                               OnRetryComponent(componentIndex);
                           });
     }
@@ -231,7 +235,10 @@ void DownloadProgressDialog::OnRetryFailed(wxCommandEvent&) {
 
     for (std::size_t i = 0; i < rows_.size(); ++i) {
         if (rows_[i].state == RowState::Failed) {
-            QueueRetry(jobs_[i].componentIndex);
+            const auto componentIndex = jobs_[i].kind == DownloadJobKind::NexusArtifact
+                ? jobs_[i].artifact.componentIndex
+                : jobs_[i].source.componentIndex;
+            QueueRetry(componentIndex);
         }
     }
 
