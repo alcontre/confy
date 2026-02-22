@@ -387,9 +387,9 @@ bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
         return false;
     }
 
-    wxLogMessage("[nexus] discovered versions component='%s' count=%zu",
+    wxLogMessage("[nexus] discovered versions component='%s' count=%llu",
                  componentName.c_str(),
-                 outVersions.size());
+                 static_cast<unsigned long long>(outVersions.size()));
     // Keep per-component version logging bounded to avoid excessive console spam on large repos.
     constexpr std::size_t kMaxLoggedVersions = 20;
     const auto toLog = std::min(outVersions.size(), kMaxLoggedVersions);
@@ -400,9 +400,9 @@ bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
                      version.c_str());
     }
     if (outVersions.size() > kMaxLoggedVersions) {
-        wxLogMessage("[nexus] additional versions omitted component='%s' omittedCount=%zu",
+        wxLogMessage("[nexus] additional versions omitted component='%s' omittedCount=%llu",
                      componentName.c_str(),
-                     outVersions.size() - kMaxLoggedVersions);
+                     static_cast<unsigned long long>(outVersions.size() - kMaxLoggedVersions));
     }
     return true;
 }
@@ -482,11 +482,12 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         return false;
     }
 
-    wxLogMessage("[nexus] total assets returned (query='%s')=%zu includeFilters=%zu excludeFilters=%zu",
+    wxLogMessage(
+        "[nexus] total assets returned (query='%s')=%llu includeFilters=%llu excludeFilters=%llu",
                  prefix.c_str(),
-                 assets.size(),
-                 regexIncludes.size(),
-                 regexExcludes.size());
+                 static_cast<unsigned long long>(assets.size()),
+                 static_cast<unsigned long long>(regexIncludes.size()),
+                 static_cast<unsigned long long>(regexExcludes.size()));
 
     std::vector<std::regex> includeRegexes;
     includeRegexes.reserve(regexIncludes.size());
@@ -575,7 +576,9 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         }
     }
 
-    wxLogMessage("[nexus] filtered matches prefix='%s' count=%zu", prefix.c_str(), matches.size());
+    wxLogMessage("[nexus] filtered matches prefix='%s' count=%llu",
+                 prefix.c_str(),
+                 static_cast<unsigned long long>(matches.size()));
 
     if (matches.empty()) {
         errorMessage = "No assets found for path prefix: " + prefix;
@@ -720,7 +723,8 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
             }
         }
 
-        wxLogMessage("[nexus] browse listing discovered files=%zu", discovered);
+        wxLogMessage("[nexus] browse listing discovered files=%llu",
+                     static_cast<unsigned long long>(discovered));
     }
 
     return true;
