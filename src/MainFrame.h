@@ -43,6 +43,7 @@ private:
     };
 
     void OnLoadConfig(wxCommandEvent& event);
+    void OnLoadLastConfig(wxCommandEvent& event);
     void OnApply(wxCommandEvent& event);
     void OnSelectAll(wxCommandEvent& event);
     void OnDeselectAll(wxCommandEvent& event);
@@ -53,6 +54,7 @@ private:
     void OnUpdateDebugConsole(wxUpdateUIEvent& event);
     void RelayoutComponentArea();
     void RenderConfig();
+    void LoadConfigFromPath(const wxString& path);
     void AddComponentRow(std::size_t componentIndex);
     void UpdateComboTooltip(wxComboBox& comboBox);
     void UpdateRowTooltips(std::size_t componentIndex);
@@ -83,6 +85,7 @@ private:
     wxSizer* componentListSizer_{nullptr};
     wxPanel* emptyStatePanel_{nullptr};
     wxButton* loadConfigButton_{nullptr};
+    wxButton* loadLastConfigButton_{nullptr};
     wxButton* applyButton_{nullptr};
     std::vector<ComponentRowWidgets> rows_;
     std::vector<ComponentMetadataState> metadataState_;

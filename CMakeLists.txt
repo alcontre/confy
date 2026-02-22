@@ -26,6 +26,7 @@ endif()
 set(CONFY_SOURCES
     src/main.cpp
     src/App.cpp
+    src/AppSettings.cpp
     src/DebugConsole.cpp
     src/MainFrame.cpp
     src/ConfigLoader.cpp
@@ -37,6 +38,7 @@ set(CONFY_SOURCES
 
 set(CONFY_HEADERS
     src/App.h
+    src/AppSettings.h
     src/DebugConsole.h
     src/MainFrame.h
     src/ConfigModel.h

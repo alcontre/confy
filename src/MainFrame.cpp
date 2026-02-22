@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 
+#include "AppSettings.h"
 #include "AuthCredentials.h"
 #include "ConfigLoader.h"
 #include "DebugConsole.h"
@@ -31,6 +32,7 @@ constexpr int kIdLoadConfig = wxID_HIGHEST + 1;
 constexpr int kIdApply = wxID_HIGHEST + 2;
 constexpr int kIdDeselectAll = wxID_HIGHEST + 3;
 constexpr int kIdViewDebugConsole = wxID_HIGHEST + 4;
+constexpr int kIdLoadLastConfig = wxID_HIGHEST + 5;
 constexpr int kSectionLabelWidth = 64;
 constexpr int kFieldLabelWidth = 72;
 
@@ -98,6 +100,19 @@ MainFrame::MainFrame()
     loadConfigButton_->SetFont(buttonFont);
     loadConfigButton_->SetMinSize(wxSize(280, 72));
     emptyStateSizer->Add(loadConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL);
+
+    loadLastConfigButton_ = new wxButton(emptyStatePanel_, kIdLoadLastConfig, "");
+    loadLastConfigButton_->SetMinSize(wxSize(280, 36));
+    loadLastConfigButton_->Hide();
+    emptyStateSizer->Add(loadLastConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 12);
+
+    wxString lastPath(AppSettings::Get().GetLastConfigPath());
+    if (!lastPath.empty()) {
+        loadLastConfigButton_->SetLabel(wxString::Format("Load last: %s", lastPath));
+        loadLastConfigButton_->SetToolTip(lastPath);
+        loadLastConfigButton_->Show();
+    }
+
     emptyStateSizer->AddStretchSpacer();
     emptyStatePanel_->SetSizer(emptyStateSizer);
 
@@ -113,6 +128,7 @@ MainFrame::MainFrame()
 
     Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
+    Bind(wxEVT_BUTTON, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
     Bind(wxEVT_MENU, &MainFrame::OnSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_MENU, &MainFrame::OnDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_MENU, &MainFrame::OnToggleDebugConsole, this, kIdViewDebugConsole);
@@ -148,15 +164,28 @@ void MainFrame::OnLoadConfig(wxCommandEvent&) {
         return;
     }
 
+    LoadConfigFromPath(dialog.GetPath());
+}
+
+void MainFrame::OnLoadLastConfig(wxCommandEvent&) {
+    const auto lastPath = AppSettings::Get().GetLastConfigPath();
+    if (lastPath.empty()) {
+        return;
+    }
+    LoadConfigFromPath(wxString(lastPath));
+}
+
+void MainFrame::LoadConfigFromPath(const wxString& path) {
     ConfigLoader loader;
-    auto result = loader.LoadFromFile(dialog.GetPath().ToStdString());
+    auto result = loader.LoadFromFile(path.ToStdString());
     if (!result.success) {
         wxMessageBox(result.errorMessage, "Config load failed", wxOK | wxICON_ERROR, this);
         return;
     }
 
     config_ = std::move(result.config);
-    loadedConfigPath_ = dialog.GetPath().ToStdString();
+    loadedConfigPath_ = path.ToStdString();
+    AppSettings::Get().SetLastConfigPath(loadedConfigPath_);
     RenderConfig();
 }
 
@@ -258,6 +287,7 @@ void MainFrame::RenderConfig() {
     componentListSizer_->Clear(true);
     emptyStatePanel_ = nullptr;
     loadConfigButton_ = nullptr;
+    loadLastConfigButton_ = nullptr;
     rows_.clear();
     rows_.reserve(config_.components.size());
     metadataState_.clear();

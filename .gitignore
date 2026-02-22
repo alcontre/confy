@@ -1,4 +1,5 @@
 .cache/
 build/
+build2/
 _codeql_detected_source_root
 vcpkg_installed/
