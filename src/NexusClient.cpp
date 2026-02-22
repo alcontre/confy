@@ -7,15 +7,63 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <regex>
+#include <sstream>
 #include <thread>
 #include <unordered_set>
 #include <vector>
+#include <wx/log.h>
 
 namespace fs = std::filesystem;
 
 namespace {
+
+enum class LogLevel { Info, Error };
+
+class StreamLog final {
+public:
+    explicit StreamLog(LogLevel level) : level_(level) {}
+
+    ~StreamLog() {
+        const auto message = stream_.str();
+        if (message.empty()) {
+            return;
+        }
+
+        if (level_ == LogLevel::Error) {
+            wxLogError("%s", message);
+            return;
+        }
+
+        wxLogMessage("%s", message);
+    }
+
+    template <typename T>
+    StreamLog& operator<<(const T& value) {
+        stream_ << value;
+        return *this;
+    }
+
+    StreamLog& operator<<(std::ostream& (*manipulator)(std::ostream&)) {
+        if (manipulator != static_cast<std::ostream& (*)(std::ostream&)>(
+                               std::endl<char, std::char_traits<char>>)) {
+            manipulator(stream_);
+        }
+        return *this;
+    }
+
+private:
+    LogLevel level_;
+    std::ostringstream stream_;
+};
+
+StreamLog LogInfo() {
+    return StreamLog(LogLevel::Info);
+}
+
+StreamLog LogError() {
+    return StreamLog(LogLevel::Error);
+}
 
 bool ResetDirectoryWithRetries(const fs::path& targetDirectory,
                                std::string& errorMessage,
@@ -367,7 +415,7 @@ bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
                                         const std::string& componentName,
                                         std::vector<std::string>& outVersions,
                                         std::string& errorMessage) const {
-    std::cout << "[nexus] listing component versions component='" << componentName
+    LogInfo() << "[nexus] listing component versions component='" << componentName
               << "' repoUrl='" << repositoryBrowseUrl << "'" << std::endl;
     outVersions.clear();
     RepoInfo repo;
@@ -386,18 +434,18 @@ bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
         return false;
     }
 
-    std::cout << "[nexus] discovered versions component='" << componentName
+    LogInfo() << "[nexus] discovered versions component='" << componentName
               << "' count=" << outVersions.size() << std::endl;
     // Keep per-component version logging bounded to avoid excessive console spam on large repos.
     constexpr std::size_t kMaxLoggedVersions = 20;
     const auto toLog = std::min(outVersions.size(), kMaxLoggedVersions);
     for (std::size_t i = 0; i < toLog; ++i) {
         const auto& version = outVersions[i];
-        std::cout << "[nexus] discovered version component='" << componentName << "' value='"
+        LogInfo() << "[nexus] discovered version component='" << componentName << "' value='"
                   << version << "'" << std::endl;
     }
     if (outVersions.size() > kMaxLoggedVersions) {
-        std::cout << "[nexus] additional versions omitted component='" << componentName
+        LogInfo() << "[nexus] additional versions omitted component='" << componentName
                   << "' omittedCount=" << (outVersions.size() - kMaxLoggedVersions) << std::endl;
     }
     return true;
@@ -438,41 +486,41 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                                        std::atomic<bool>& cancelRequested,
                                        ProgressCallback progress,
                                        std::string& errorMessage) const {
-    std::cout << "[nexus] download request repoUrl='" << repositoryBrowseUrl << "' component='"
+    LogInfo() << "[nexus] download request repoUrl='" << repositoryBrowseUrl << "' component='"
               << componentName << "' version='" << version << "' buildType='" << buildType
               << "' target='" << targetDirectory << "'" << std::endl;
 
     RepoInfo repo;
     if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
         errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
-        std::cerr << "[nexus] parse repo URL failed: " << errorMessage << std::endl;
+        LogError() << "[nexus] parse repo URL failed: " << errorMessage << std::endl;
         return false;
     }
 
-    std::cout << "[nexus] parsed baseUrl='" << repo.baseUrl << "' repository='" << repo.repository
+    LogInfo() << "[nexus] parsed baseUrl='" << repo.baseUrl << "' repository='" << repo.repository
               << "' hostPort='" << repo.hostPort << "'" << std::endl;
 
     ServerCredentials creds;
     if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
         errorMessage =
             "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
-        std::cerr << "[nexus] credential lookup failed for hostPort='" << repo.hostPort << "'"
+        LogError() << "[nexus] credential lookup failed for hostPort='" << repo.hostPort << "'"
                   << std::endl;
         return false;
     }
 
-    std::cout << "[nexus] credentials resolved for hostPort='" << repo.hostPort << "' username='"
+    LogInfo() << "[nexus] credentials resolved for hostPort='" << repo.hostPort << "' username='"
               << creds.username << "'" << std::endl;
 
     const auto prefix = componentName + "/" + version + "/" + buildType + "/";
 
     std::vector<NexusArtifactAsset> assets;
     if (!ListAssets(repo, creds, prefix, assets, errorMessage)) {
-        std::cerr << "[nexus] list assets failed: " << errorMessage << std::endl;
+        LogError() << "[nexus] list assets failed: " << errorMessage << std::endl;
         return false;
     }
 
-    std::cout << "[nexus] total assets returned (query='" << prefix << "')=" << assets.size()
+    LogInfo() << "[nexus] total assets returned (query='" << prefix << "')=" << assets.size()
               << " includeFilters=" << regexIncludes.size() << " excludeFilters="
               << regexExcludes.size() << std::endl;
 
@@ -563,20 +611,20 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
         }
     }
 
-    std::cout << "[nexus] filtered matches prefix='" << prefix << "' count=" << matches.size()
+    LogInfo() << "[nexus] filtered matches prefix='" << prefix << "' count=" << matches.size()
               << std::endl;
 
     if (matches.empty()) {
         errorMessage = "No assets found for path prefix: " + prefix;
         for (const auto& asset : assets) {
-            std::cout << "[nexus] candidate asset path='" << asset.path << "'" << std::endl;
+            LogInfo() << "[nexus] candidate asset path='" << asset.path << "'" << std::endl;
         }
-        std::cerr << "[nexus] no matching assets" << std::endl;
+        LogError() << "[nexus] no matching assets" << std::endl;
         return false;
     }
 
     if (!ResetDirectoryWithRetries(fs::path(targetDirectory), errorMessage)) {
-        std::cerr << "[nexus] target directory reset failed target='" << targetDirectory
+        LogError() << "[nexus] target directory reset failed target='" << targetDirectory
                   << "' error='" << errorMessage << "'" << std::endl;
         return false;
     }
@@ -586,7 +634,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
 
     for (const auto& matched : matches) {
         if (cancelRequested.load()) {
-            std::cout << "[nexus] cancel requested during downloads" << std::endl;
+            LogInfo() << "[nexus] cancel requested during downloads" << std::endl;
             return false;
         }
 
@@ -595,7 +643,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
 
         std::string downloadError;
         std::uint64_t currentDownloadedBytes = 0;
-        std::cout << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
+        LogInfo() << "[nexus] downloading path='" << matched.asset.path << "' url='" << matched.asset.downloadUrl
                   << "'" << std::endl;
         if (!HttpDownloadBinary(
                 matched.asset.downloadUrl,
@@ -615,7 +663,7 @@ bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
                 },
                 downloadError)) {
             errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
-            std::cerr << "[nexus] download failed path='" << matched.asset.path << "' error='" << downloadError
+            LogError() << "[nexus] download failed path='" << matched.asset.path << "' error='" << downloadError
                       << "'" << std::endl;
             return false;
         }
@@ -676,11 +724,11 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
             browseUrl += EncodePath(currentDirectory);
         }
 
-        std::cout << "[nexus] browse listing url='" << browseUrl << "'" << std::endl;
+        LogInfo() << "[nexus] browse listing url='" << browseUrl << "'" << std::endl;
 
         std::string responseBody;
         if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
-            std::cerr << "[nexus] browse listing request failed: " << errorMessage << std::endl;
+            LogError() << "[nexus] browse listing request failed: " << errorMessage << std::endl;
             return false;
         }
 
@@ -706,7 +754,7 @@ bool NexusClient::ListAssets(const RepoInfo& repo,
             }
         }
 
-        std::cout << "[nexus] browse listing discovered files=" << discovered << std::endl;
+        LogInfo() << "[nexus] browse listing discovered files=" << discovered << std::endl;
     }
 
     return true;
@@ -775,13 +823,13 @@ bool NexusClient::HttpGetText(const std::string& url,
 
     if (result != CURLE_OK) {
         errorMessage = std::string("HTTP request failed: ") + curl_easy_strerror(result);
-        std::cerr << "[nexus] http get failed error='" << errorMessage << "'" << std::endl;
+        LogError() << "[nexus] http get failed error='" << errorMessage << "'" << std::endl;
         return false;
     }
 
     if (statusCode < 200 || statusCode >= 300) {
         errorMessage = "HTTP status " + std::to_string(statusCode);
-        std::cerr << "[nexus] http get status=" << statusCode << std::endl;
+        LogError() << "[nexus] http get status=" << statusCode << std::endl;
         return false;
     }
 
@@ -797,7 +845,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
     std::ofstream output(outFile, std::ios::binary);
     if (!output) {
         errorMessage = "Unable to open local output file";
-        std::cerr << "[nexus] open output file failed path='" << outFile << "'" << std::endl;
+        LogError() << "[nexus] open output file failed path='" << outFile << "'" << std::endl;
         return false;
     }
 
@@ -829,7 +877,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
         std::error_code removeError;
         fs::remove(outFile, removeError);
         if (removeError) {
-            std::cerr << "[nexus] failed to remove partial file path='" << outFile
+            LogError() << "[nexus] failed to remove partial file path='" << outFile
                       << "' error='" << removeError.message() << "'" << std::endl;
         }
     };
@@ -844,7 +892,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
             output.close();
         }
         deletePartialFile();
-        std::cerr << "[nexus] http download failed path='" << outFile << "' error='" << errorMessage
+        LogError() << "[nexus] http download failed path='" << outFile << "' error='" << errorMessage
                   << "'" << std::endl;
         return false;
     }
@@ -855,7 +903,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
             output.close();
         }
         deletePartialFile();
-        std::cerr << "[nexus] http download status=" << statusCode << " path='" << outFile << "'"
+        LogError() << "[nexus] http download status=" << statusCode << " path='" << outFile << "'"
                   << std::endl;
         return false;
     }
@@ -866,7 +914,7 @@ bool NexusClient::HttpDownloadBinary(const std::string& url,
             output.close();
         }
         deletePartialFile();
-        std::cerr << "[nexus] write output file failed path='" << outFile << "'" << std::endl;
+        LogError() << "[nexus] write output file failed path='" << outFile << "'" << std::endl;
         return false;
     }
 
