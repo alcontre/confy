@@ -48,8 +48,10 @@ bool RunCommandCaptureWindows(const std::string& command,
 
     PROCESS_INFORMATION processInfo{};
     std::string commandLine = "cmd.exe /d /s /c \"" + command + "\"";
+    std::vector<char> commandLineBuffer(commandLine.begin(), commandLine.end());
+    commandLineBuffer.push_back('\0');
     if (!CreateProcessA(nullptr,
-                        commandLine.data(),
+                        commandLineBuffer.data(),
                         nullptr,
                         nullptr,
                         TRUE,
@@ -77,7 +79,12 @@ bool RunCommandCaptureWindows(const std::string& command,
 
     WaitForSingleObject(processInfo.hProcess, INFINITE);
     DWORD exitCode = 1;
-    GetExitCodeProcess(processInfo.hProcess, &exitCode);
+    if (!GetExitCodeProcess(processInfo.hProcess, &exitCode)) {
+        CloseHandle(processInfo.hThread);
+        CloseHandle(processInfo.hProcess);
+        errorMessage = "Failed to read process exit code: " + command;
+        return false;
+    }
     CloseHandle(processInfo.hThread);
     CloseHandle(processInfo.hProcess);
 
