@@ -85,6 +85,20 @@ std::vector<std::string> GitClient::ParseLsRemoteRefs(const std::string& lsRemot
 }
 
 std::string GitClient::EscapeShellArg(const std::string& value) {
+#ifdef _WIN32
+    std::string escaped;
+    escaped.reserve(value.size() + 2);
+    escaped.push_back('"');
+    for (char c : value) {
+        if (c == '"') {
+            escaped += "\\\"";
+            continue;
+        }
+        escaped.push_back(c);
+    }
+    escaped.push_back('"');
+    return escaped;
+#else
     std::string escaped;
     escaped.reserve(value.size() + 2);
     escaped.push_back('\'');
@@ -97,6 +111,7 @@ std::string GitClient::EscapeShellArg(const std::string& value) {
     }
     escaped.push_back('\'');
     return escaped;
+#endif
 }
 
 std::string GitClient::UrlEncode(const std::string& value) {
