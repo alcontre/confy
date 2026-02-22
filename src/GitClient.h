@@ -32,15 +32,14 @@ public:
 
 private:
     static std::string EscapeShellArg(const std::string& value);
-    static std::string UrlEncode(const std::string& value);
     static bool RunCommandCapture(const std::string& command,
                                   std::string& output,
                                   std::string& errorMessage);
     static int DecodeExitCode(int rawExitCode);
 
-    bool BuildAuthenticatedUrl(const std::string& repositoryUrl,
-                               std::string& outUrl,
-                               std::string& errorMessage) const;
+    bool BuildAuthConfigArg(const std::string& repositoryUrl,
+                            std::string& outConfigArg,
+                            std::string& errorMessage) const;
 
     AuthCredentials credentials_;
 };

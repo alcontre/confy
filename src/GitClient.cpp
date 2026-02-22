@@ -114,23 +114,6 @@ std::string GitClient::EscapeShellArg(const std::string& value) {
 #endif
 }
 
-std::string GitClient::UrlEncode(const std::string& value) {
-    std::string out;
-    out.reserve(value.size());
-    for (unsigned char c : value) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
-            c == '_' || c == '.' || c == '~') {
-            out.push_back(static_cast<char>(c));
-        } else {
-            constexpr char kHex[] = "0123456789ABCDEF";
-            out.push_back('%');
-            out.push_back(kHex[(c >> 4) & 0x0F]);
-            out.push_back(kHex[c & 0x0F]);
-        }
-    }
-    return out;
-}
-
 int GitClient::DecodeExitCode(int rawExitCode) {
     if (rawExitCode == -1) {
         return -1;
@@ -176,11 +159,12 @@ bool GitClient::RunCommandCapture(const std::string& command,
     return true;
 }
 
-bool GitClient::BuildAuthenticatedUrl(const std::string& repositoryUrl,
-                                      std::string& outUrl,
-                                      std::string& errorMessage) const {
+bool GitClient::BuildAuthConfigArg(const std::string& repositoryUrl,
+                                   std::string& outConfigArg,
+                                   std::string& errorMessage) const {
+    outConfigArg.clear();
+
     if (repositoryUrl.rfind("http://", 0) != 0 && repositoryUrl.rfind("https://", 0) != 0) {
-        outUrl = repositoryUrl;
         return true;
     }
 
@@ -201,17 +185,7 @@ bool GitClient::BuildAuthenticatedUrl(const std::string& repositoryUrl,
         return false;
     }
 
-    const auto schemeEnd = repositoryUrl.find("://");
-    const auto authStart = schemeEnd + 3;
-    const auto pathStart = repositoryUrl.find('/', authStart);
-    const auto authority = pathStart == std::string::npos
-        ? repositoryUrl.substr(authStart)
-        : repositoryUrl.substr(authStart, pathStart - authStart);
-    const auto path = pathStart == std::string::npos ? std::string() : repositoryUrl.substr(pathStart);
-
-    const std::string username = creds.username.empty() ? "x-token-auth" : creds.username;
-    outUrl = repositoryUrl.substr(0, authStart) + UrlEncode(username) + ":" + UrlEncode(creds.password) + "@" +
-             authority + path;
+    outConfigArg = "-c " + EscapeShellArg("http.extraHeader=Authorization: Bearer " + creds.password);
     return true;
 }
 
@@ -220,13 +194,17 @@ bool GitClient::ListBranchesAndTags(const std::string& repositoryUrl,
                                     std::string& errorMessage) const {
     outRefs.clear();
 
-    std::string authenticatedUrl;
-    if (!BuildAuthenticatedUrl(repositoryUrl, authenticatedUrl, errorMessage)) {
+    std::string authConfigArg;
+    if (!BuildAuthConfigArg(repositoryUrl, authConfigArg, errorMessage)) {
         return false;
     }
 
     std::string output;
-    const std::string command = "git ls-remote --heads --tags " + EscapeShellArg(authenticatedUrl);
+    std::string command = "git ";
+    if (!authConfigArg.empty()) {
+        command += authConfigArg + " ";
+    }
+    command += "ls-remote --heads --tags " + EscapeShellArg(repositoryUrl);
     if (!RunCommandCapture(command, output, errorMessage)) {
         return false;
     }
@@ -247,8 +225,8 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
         return false;
     }
 
-    std::string authenticatedUrl;
-    if (!BuildAuthenticatedUrl(repositoryUrl, authenticatedUrl, errorMessage)) {
+    std::string authConfigArg;
+    if (!BuildAuthConfigArg(repositoryUrl, authConfigArg, errorMessage)) {
         return false;
     }
 
@@ -271,14 +249,18 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
     }
 
     std::string output;
-    std::string command = "git clone --recursive ";
+    std::string command = "git ";
+    if (!authConfigArg.empty()) {
+        command += authConfigArg + " ";
+    }
+    command += "clone --recursive ";
     if (shallow) {
         command += "--depth 1 --shallow-submodules ";
     }
     if (!branchOrTag.empty()) {
         command += "--branch " + EscapeShellArg(branchOrTag) + " ";
     }
-    command += EscapeShellArg(authenticatedUrl) + " " + EscapeShellArg(targetDirectory);
+    command += EscapeShellArg(repositoryUrl) + " " + EscapeShellArg(targetDirectory);
 
     if (!RunCommandCapture(command, output, errorMessage)) {
         return false;
@@ -293,8 +275,12 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
         progress(75, "Updating submodules");
     }
 
-    std::string submoduleCommand =
-        "git -C " + EscapeShellArg(targetDirectory) + " submodule update --init --recursive";
+    std::string submoduleCommand = "git ";
+    if (!authConfigArg.empty()) {
+        submoduleCommand += authConfigArg + " ";
+    }
+    submoduleCommand +=
+        "-C " + EscapeShellArg(targetDirectory) + " submodule update --init --recursive";
     if (shallow) {
         submoduleCommand += " --depth 1";
     }
