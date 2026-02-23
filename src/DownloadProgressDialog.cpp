@@ -109,8 +109,7 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Dow
         const auto& job = jobs_[i];
         const auto displayName = job.kind == DownloadJobKind::NexusArtifact ? job.artifact.componentDisplayName
                                                                             : job.source.componentDisplayName;
-        const auto componentIndex = job.kind == DownloadJobKind::NexusArtifact ? job.artifact.componentIndex
-                                                                                : job.source.componentIndex;
+        const auto componentIndex = job.ComponentIndex();
 
         auto* rowPanel = new wxPanel(rowsPanel);
         rowPanel->SetMinSize(wxSize(-1, kRowMinHeight));
@@ -235,10 +234,7 @@ void DownloadProgressDialog::OnRetryFailed(wxCommandEvent&) {
 
     for (std::size_t i = 0; i < rows_.size(); ++i) {
         if (rows_[i].state == RowState::Failed) {
-            const auto componentIndex = jobs_[i].kind == DownloadJobKind::NexusArtifact
-                ? jobs_[i].artifact.componentIndex
-                : jobs_[i].source.componentIndex;
-            QueueRetry(componentIndex);
+            QueueRetry(jobs_[i].ComponentIndex());
         }
     }
 

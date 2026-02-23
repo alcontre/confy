@@ -102,14 +102,13 @@ MainFrame::MainFrame()
     loadConfigButton_->SetMinSize(wxSize(280, 72));
     emptyStateSizer->Add(loadConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL);
 
-    loadLastConfigButton_ = new wxButton(emptyStatePanel_, kIdLoadLastConfig, "");
+    loadLastConfigButton_ = new wxButton(emptyStatePanel_, kIdLoadLastConfig, "Load Last");
     loadLastConfigButton_->SetMinSize(wxSize(280, 36));
     loadLastConfigButton_->Hide();
     emptyStateSizer->Add(loadLastConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 12);
 
     wxString lastPath(AppSettings::Get().GetLastConfigPath());
     if (!lastPath.empty()) {
-        loadLastConfigButton_->SetLabel(wxString::Format("Load last: %s", lastPath));
         loadLastConfigButton_->SetToolTip(lastPath);
         loadLastConfigButton_->Show();
     }
