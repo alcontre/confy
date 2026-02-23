@@ -15,6 +15,7 @@ struct NexusDownloadJob {
     std::string version;
     std::string buildType;
     std::string targetDirectory;
+    std::string postDownloadScript;
     std::vector<std::string> regexIncludes;
     std::vector<std::string> regexExcludes;
 };
@@ -27,6 +28,7 @@ struct GitCloneJob {
     std::string repositoryUrl;
     std::string branchOrTag;
     std::string targetDirectory;
+    std::string postDownloadScript;
     bool shallow{true};
 };
 

@@ -266,6 +266,7 @@ void MainFrame::OnApply(wxCommandEvent&) {
             sourceJob.repositoryUrl = component.source.url;
             sourceJob.branchOrTag = component.source.branchOrTag;
             sourceJob.targetDirectory = (std::filesystem::path(config_.rootPath) / component.path).string();
+            sourceJob.postDownloadScript = component.source.script;
             sourceJob.shallow = component.source.shallow;
             jobs.push_back(DownloadJob::FromSource(std::move(sourceJob)));
         }
@@ -280,6 +281,7 @@ void MainFrame::OnApply(wxCommandEvent&) {
             artifactJob.version = component.artifact.version;
             artifactJob.buildType = component.artifact.buildType;
             artifactJob.targetDirectory = (std::filesystem::path(config_.rootPath) / component.path).string();
+            artifactJob.postDownloadScript = component.artifact.script;
             artifactJob.regexIncludes = component.artifact.regexIncludes;
             artifactJob.regexExcludes = component.artifact.regexExcludes;
 

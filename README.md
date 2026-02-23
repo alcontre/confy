@@ -12,6 +12,7 @@ Cross-platform C++17/wxWidgets desktop app for loading an XML config and downloa
 - Source fetch support using `git` (Bitbucket DC HTTPS + `.m2/settings.xml` credentials)
 - Source branch/tag dropdown population from remote refs
 - Recursive clone/submodule handling with shallow-by-default behavior (`<NoShallow/>` for deep clone)
+- Post-download `<script>` execution in component `path` (`powershell` on Windows/MSVC, `/bin/sh` on Linux/macOS)
 
 ## Build
 

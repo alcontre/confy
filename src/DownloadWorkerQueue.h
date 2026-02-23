@@ -28,6 +28,9 @@ private:
     void PushEvent(DownloadEvent event);
     void ProcessJob(const DownloadJob& job);
     void ProcessJob(const NexusDownloadJob& job);
+    bool ExecutePostDownloadScript(const std::string& script,
+                                   const std::string& workingDirectory,
+                                   std::string& errorMessage);
 
     std::size_t workerCount_{0};
     std::vector<std::thread> workers_;

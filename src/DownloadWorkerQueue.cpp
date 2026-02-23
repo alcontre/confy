@@ -4,14 +4,66 @@
 #include "GitClient.h"
 #include "NexusClient.h"
 
+#include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <functional>
 #include <filesystem>
 #include <thread>
+#include <vector>
 
 #include <wx/init.h>
 #include <wx/log.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <array>
+#include <cstdio>
+#include <sys/wait.h>
+#endif
+
 namespace confy {
+
+namespace {
+
+std::string TrimScript(const std::string& script) {
+    const auto first = script.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = script.find_last_not_of(" \t\r\n");
+    return script.substr(first, last - first + 1);
+}
+
+std::string EscapeShArg(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size() + 2);
+    escaped.push_back('\'');
+    for (char c : value) {
+        if (c == '\'') {
+            escaped += "'\\''";
+            continue;
+        }
+        escaped.push_back(c);
+    }
+    escaped.push_back('\'');
+    return escaped;
+}
+
+int DecodeExitCode(int rawExitCode) {
+    if (rawExitCode == -1) {
+        return -1;
+    }
+#ifdef WIFEXITED
+    if (WIFEXITED(rawExitCode)) {
+        return WEXITSTATUS(rawExitCode);
+    }
+#endif
+    return rawExitCode;
+}
+
+}  // namespace
 
 DownloadWorkerQueue::DownloadWorkerQueue(std::size_t workerCount)
     : workerCount_(workerCount == 0 ? 1 : workerCount) {}
@@ -262,6 +314,20 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob& job) {
         return;
     }
 
+    std::string scriptError;
+    if (!ExecutePostDownloadScript(job.postDownloadScript, job.targetDirectory, scriptError)) {
+        wxLogError("[download-worker] script failed jobId=%llu error='%s'",
+                   static_cast<unsigned long long>(job.jobId),
+                   scriptError.c_str());
+        PushEvent({job.jobId,
+                   job.componentIndex,
+                   DownloadEventType::Failed,
+                   0,
+                   0,
+                   "Post-download script failed: " + scriptError});
+        return;
+    }
+
     wxLogMessage("[download-worker] completed jobId=%llu", static_cast<unsigned long long>(job.jobId));
     PushEvent({job.jobId, job.componentIndex, DownloadEventType::Completed, 100, 0, "Completed"});
 }
@@ -337,7 +403,183 @@ void DownloadWorkerQueue::ProcessJob(const DownloadJob& job) {
         return;
     }
 
+    std::string scriptError;
+    if (!ExecutePostDownloadScript(source.postDownloadScript, source.targetDirectory, scriptError)) {
+        wxLogError("[download-worker] source script failed jobId=%llu error='%s'",
+                   static_cast<unsigned long long>(source.jobId),
+                   scriptError.c_str());
+        PushEvent({source.jobId,
+                   source.componentIndex,
+                   DownloadEventType::Failed,
+                   0,
+                   0,
+                   "Post-download script failed: " + scriptError});
+        return;
+    }
+
     PushEvent({source.jobId, source.componentIndex, DownloadEventType::Completed, 100, 0, "Completed"});
+}
+
+bool DownloadWorkerQueue::ExecutePostDownloadScript(const std::string& script,
+                                                    const std::string& workingDirectory,
+                                                    std::string& errorMessage) {
+    errorMessage.clear();
+    const std::string trimmedScript = TrimScript(script);
+    if (trimmedScript.empty()) {
+        return true;
+    }
+
+    const std::filesystem::path workDirPath(workingDirectory);
+    if (!std::filesystem::exists(workDirPath)) {
+        errorMessage = "Working directory does not exist: " + workingDirectory;
+        return false;
+    }
+    if (!std::filesystem::is_directory(workDirPath)) {
+        errorMessage = "Working directory is not a directory: " + workingDirectory;
+        return false;
+    }
+
+#ifdef _WIN32
+    const std::filesystem::path scriptPath =
+        workDirPath / (".confy-post-download-" + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) +
+                       "-" + std::to_string(static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count())) +
+                       ".ps1");
+#else
+    const std::filesystem::path scriptPath =
+        workDirPath / (".confy-post-download-" + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) +
+                       "-" + std::to_string(static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count())) +
+                       ".sh");
+#endif
+
+    {
+        std::ofstream out(scriptPath, std::ios::out | std::ios::trunc);
+        if (!out.is_open()) {
+            errorMessage = "Failed to create temporary script file in: " + workingDirectory;
+            return false;
+        }
+        out << trimmedScript;
+        if (!out.good()) {
+            errorMessage = "Failed to write temporary script file: " + scriptPath.string();
+            return false;
+        }
+    }
+
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES securityAttributes{};
+    securityAttributes.nLength = sizeof(securityAttributes);
+    securityAttributes.bInheritHandle = TRUE;
+
+    HANDLE readPipe = nullptr;
+    HANDLE writePipe = nullptr;
+    if (!CreatePipe(&readPipe, &writePipe, &securityAttributes, 0)) {
+        std::filesystem::remove(scriptPath);
+        errorMessage = "Failed to create output pipe for script process.";
+        return false;
+    }
+
+    if (!SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        std::filesystem::remove(scriptPath);
+        errorMessage = "Failed to configure output pipe for script process.";
+        return false;
+    }
+
+    STARTUPINFOA startupInfo{};
+    startupInfo.cb = sizeof(startupInfo);
+    startupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startupInfo.hStdOutput = writePipe;
+    startupInfo.hStdError = writePipe;
+
+    PROCESS_INFORMATION processInfo{};
+    const std::string commandLine =
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + scriptPath.string() + "\"";
+    std::vector<char> commandLineBuffer(commandLine.begin(), commandLine.end());
+    commandLineBuffer.push_back('\0');
+
+    const std::string workingDirNative = workDirPath.string();
+    const BOOL started = CreateProcessA(nullptr,
+                                        commandLineBuffer.data(),
+                                        nullptr,
+                                        nullptr,
+                                        TRUE,
+                                        CREATE_NO_WINDOW,
+                                        nullptr,
+                                        workingDirNative.c_str(),
+                                        &startupInfo,
+                                        &processInfo);
+    CloseHandle(writePipe);
+
+    if (!started) {
+        CloseHandle(readPipe);
+        std::filesystem::remove(scriptPath);
+        errorMessage = "Failed to start script with PowerShell.";
+        return false;
+    }
+
+    std::string output;
+    std::vector<char> buffer(512);
+    DWORD bytesRead = 0;
+    while (ReadFile(readPipe, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr) && bytesRead > 0) {
+        output.append(buffer.data(), bytesRead);
+    }
+    CloseHandle(readPipe);
+
+    WaitForSingleObject(processInfo.hProcess, INFINITE);
+    DWORD exitCode = 1;
+    if (!GetExitCodeProcess(processInfo.hProcess, &exitCode)) {
+        CloseHandle(processInfo.hThread);
+        CloseHandle(processInfo.hProcess);
+        std::filesystem::remove(scriptPath);
+        errorMessage = "Failed to read script process exit code.";
+        return false;
+    }
+
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+    std::filesystem::remove(scriptPath);
+
+    if (exitCode != 0) {
+        if (output.empty()) {
+            errorMessage = "Script failed with exit code " + std::to_string(static_cast<unsigned long>(exitCode));
+        } else {
+            errorMessage = output;
+        }
+        return false;
+    }
+
+    return true;
+#else
+    std::array<char, 512> buffer{};
+    std::string output;
+    const std::string command =
+        "cd " + EscapeShArg(workDirPath.string()) + " && /bin/sh " + EscapeShArg(scriptPath.string()) + " 2>&1";
+    FILE* pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        std::filesystem::remove(scriptPath);
+        errorMessage = "Failed to start script with /bin/sh.";
+        return false;
+    }
+
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+        output.append(buffer.data());
+    }
+
+    const int rawExitCode = pclose(pipe);
+    const int exitCode = DecodeExitCode(rawExitCode);
+    std::filesystem::remove(scriptPath);
+
+    if (exitCode != 0) {
+        if (output.empty()) {
+            errorMessage = "Script failed with exit code " + std::to_string(exitCode);
+        } else {
+            errorMessage = output;
+        }
+        return false;
+    }
+
+    return true;
+#endif
 }
 
 }  // namespace confy
