@@ -45,13 +45,17 @@ private:
 
     void OnLoadConfig(wxCommandEvent& event);
     void OnLoadLastConfig(wxCommandEvent& event);
+    void OnSaveAs(wxCommandEvent& event);
     void OnApply(wxCommandEvent& event);
     void OnSelectAll(wxCommandEvent& event);
     void OnDeselectAll(wxCommandEvent& event);
+    void OnCopyConfig(wxCommandEvent& event);
     void OnToggleDebugConsole(wxCommandEvent& event);
     void OnFrameSize(wxSizeEvent& event);
+    void OnUpdateSaveAs(wxUpdateUIEvent& event);
     void OnUpdateSelectAll(wxUpdateUIEvent& event);
     void OnUpdateDeselectAll(wxUpdateUIEvent& event);
+    void OnUpdateCopyConfig(wxUpdateUIEvent& event);
     void OnUpdateDebugConsole(wxUpdateUIEvent& event);
     void RelayoutComponentArea();
     void RenderConfig();

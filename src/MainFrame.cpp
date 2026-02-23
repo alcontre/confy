@@ -3,14 +3,17 @@
 #include "AppSettings.h"
 #include "AuthCredentials.h"
 #include "ConfigLoader.h"
+#include "ConfigWriter.h"
 #include "DebugConsole.h"
 #include "DownloadProgressDialog.h"
 #include "GitClient.h"
 #include "NexusClient.h"
 
+#include <wx/clipbrd.h>
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/combobox.h>
+#include <wx/dataobj.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/menu.h>
@@ -34,6 +37,8 @@ constexpr int kIdApply = wxID_HIGHEST + 2;
 constexpr int kIdDeselectAll = wxID_HIGHEST + 3;
 constexpr int kIdViewDebugConsole = wxID_HIGHEST + 4;
 constexpr int kIdLoadLastConfig = wxID_HIGHEST + 5;
+constexpr int kIdSaveAs = wxID_HIGHEST + 6;
+constexpr int kIdCopyConfig = wxID_HIGHEST + 7;
 constexpr int kSectionLabelWidth = 64;
 constexpr int kFieldLabelWidth = 72;
 
@@ -58,12 +63,15 @@ MainFrame::MainFrame()
 
     auto* fileMenu = new wxMenu();
     fileMenu->Append(kIdLoadConfig, "&Load Config...\tCtrl+O");
+    fileMenu->Append(kIdSaveAs, "Save &As...\tCtrl+Shift+S");
     fileMenu->AppendSeparator();
     fileMenu->Append(wxID_EXIT, "E&xit");
 
     auto* editMenu = new wxMenu();
     editMenu->Append(wxID_SELECTALL, "Select &All");
     editMenu->Append(kIdDeselectAll, "&Deselect All");
+    editMenu->AppendSeparator();
+    editMenu->Append(kIdCopyConfig, "&Copy Config");
 
     auto* viewMenu = new wxMenu();
     viewMenu->AppendCheckItem(kIdViewDebugConsole, "&Debug Console");
@@ -129,12 +137,16 @@ MainFrame::MainFrame()
     Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
+    Bind(wxEVT_MENU, &MainFrame::OnSaveAs, this, kIdSaveAs);
     Bind(wxEVT_MENU, &MainFrame::OnSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_MENU, &MainFrame::OnDeselectAll, this, kIdDeselectAll);
+    Bind(wxEVT_MENU, &MainFrame::OnCopyConfig, this, kIdCopyConfig);
     Bind(wxEVT_MENU, &MainFrame::OnToggleDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
+    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSaveAs, this, kIdSaveAs);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDeselectAll, this, kIdDeselectAll);
+    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateCopyConfig, this, kIdCopyConfig);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
     Bind(wxEVT_SIZE, &MainFrame::OnFrameSize, this);
@@ -173,6 +185,53 @@ void MainFrame::OnLoadLastConfig(wxCommandEvent&) {
         return;
     }
     LoadConfigFromPath(wxString(lastPath));
+}
+
+void MainFrame::OnSaveAs(wxCommandEvent&) {
+    wxString initialDirectory;
+    wxString initialFileName;
+    if (!loadedConfigPath_.empty()) {
+        wxFileName loadedFile{wxString(loadedConfigPath_)};
+        if (loadedFile.IsOk()) {
+            initialDirectory = loadedFile.GetPath();
+            initialFileName = loadedFile.GetFullName();
+        }
+    }
+
+    if (initialDirectory.empty()) {
+        const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
+        if (!executablePath.empty()) {
+            wxFileName executableFile(executablePath);
+            if (executableFile.IsOk()) {
+                initialDirectory = executableFile.GetPath();
+            }
+        }
+    }
+
+    wxFileDialog dialog(this,
+                        "Save config XML",
+                        initialDirectory,
+                        initialFileName,
+                        "XML files (*.xml)|*.xml|All files (*.*)|*.*",
+                        wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dialog.ShowModal() != wxID_OK) {
+        return;
+    }
+
+    wxFileName outputPath(dialog.GetPath());
+    if (!outputPath.HasExt()) {
+        outputPath.SetExt("xml");
+    }
+
+    const auto saveResult = SaveConfigToFile(config_, outputPath.GetFullPath().ToStdString());
+    if (!saveResult.success) {
+        wxMessageBox(saveResult.errorMessage, "Save failed", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    loadedConfigPath_ = outputPath.GetFullPath().ToStdString();
+    AppSettings::Get().SetLastConfigPath(loadedConfigPath_);
+    SetStatusText(wxString::Format("Config: %s", loadedConfigPath_));
 }
 
 void MainFrame::LoadConfigFromPath(const wxString& path) {
@@ -271,6 +330,35 @@ void MainFrame::OnUpdateSelectAll(wxUpdateUIEvent& event) {
 }
 
 void MainFrame::OnUpdateDeselectAll(wxUpdateUIEvent& event) {
+    event.Enable(!config_.components.empty());
+}
+
+void MainFrame::OnUpdateSaveAs(wxUpdateUIEvent& event) {
+    event.Enable(!config_.components.empty());
+}
+
+void MainFrame::OnCopyConfig(wxCommandEvent&) {
+    const auto summary = BuildHumanReadableConfigSummary(config_);
+    if (summary.empty()) {
+        wxMessageBox("No enabled components with artifact selections to copy.",
+                     "Copy Config",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+
+    if (!wxTheClipboard || !wxTheClipboard->Open()) {
+        wxMessageBox("Unable to access clipboard.", "Copy Config", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    wxTheClipboard->SetData(new wxTextDataObject(summary));
+    wxTheClipboard->Flush();
+    wxTheClipboard->Close();
+    SetStatusText("Copied configuration summary to clipboard");
+}
+
+void MainFrame::OnUpdateCopyConfig(wxUpdateUIEvent& event) {
     event.Enable(!config_.components.empty());
 }
 

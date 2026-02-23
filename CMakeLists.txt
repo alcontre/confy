@@ -30,6 +30,7 @@ set(CONFY_SOURCES
     src/DebugConsole.cpp
     src/MainFrame.cpp
     src/ConfigLoader.cpp
+    src/ConfigWriter.cpp
     src/DownloadWorkerQueue.cpp
     src/DownloadProgressDialog.cpp
     src/NexusClient.cpp
@@ -44,6 +45,7 @@ set(CONFY_HEADERS
     src/MainFrame.h
     src/ConfigModel.h
     src/ConfigLoader.h
+    src/ConfigWriter.h
     src/JobTypes.h
     src/DownloadWorkerQueue.h
     src/DownloadProgressDialog.h
@@ -80,6 +82,16 @@ add_executable(confy_config_loader_regex_validation_test
     src/ConfigLoader.cpp
 )
 target_include_directories(confy_config_loader_regex_validation_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+)
+
+add_executable(confy_config_writer_test
+    tests/ConfigWriterTest.cpp
+    src/ConfigWriter.cpp
+    src/ConfigLoader.cpp
+)
+target_include_directories(confy_config_writer_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
 )
@@ -134,6 +146,11 @@ add_test(
 add_test(
     NAME config_loader_regex_validation
     COMMAND confy_config_loader_regex_validation_test ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.invalid-regex.xml
+)
+
+add_test(
+    NAME config_writer
+    COMMAND confy_config_writer_test
 )
 
 add_test(

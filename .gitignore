@@ -1,5 +1,5 @@
 .cache/
 build/
-build2/
+.DS_Store
 _codeql_detected_source_root
 vcpkg_installed/
