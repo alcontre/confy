@@ -794,10 +794,16 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     auto& component = config_.components[componentIndex];
 
     const auto displayName = component.displayName;
-    auto* rowBox = new wxStaticBoxSizer(wxVERTICAL,
-                                        componentScroll_,
+    auto* rowPanel = new wxPanel(componentScroll_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_THEME);
+    auto* rowContainer = new wxBoxSizer(wxVERTICAL);
+    rowPanel->SetSizer(rowContainer);
+
+    auto* titleLabel = new wxStaticText(rowPanel,
+                                        wxID_ANY,
                                         wxString::Format("%s  (%s)", displayName, component.path));
-    auto* rowParent = rowBox->GetStaticBox();
+    rowContainer->Add(titleLabel, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
+
+    auto* rowParent = rowPanel;
 
     auto* detailsSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -830,8 +836,8 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     artifactRow->Add(artifactBuildType, 1, wxRIGHT | wxEXPAND, 0);
     detailsSizer->Add(artifactRow, 0, wxEXPAND);
 
-    rowBox->Add(detailsSizer, 1, wxEXPAND);
-    componentListSizer_->Add(rowBox, 0, wxBOTTOM | wxEXPAND, 6);
+    rowContainer->Add(detailsSizer, 1, wxALL | wxEXPAND, 8);
+    componentListSizer_->Add(rowPanel, 0, wxBOTTOM | wxEXPAND, 6);
 
     ComponentRowWidgets row;
     row.sourceEnabled = sourceEnabled;
