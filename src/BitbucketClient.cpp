@@ -84,7 +84,11 @@ bool ParsePagedResponse(const std::string& body,
     }
 
     outIsLastPage = outRoot.value("isLastPage", true);
-    outNextPageStart = outRoot.value("nextPageStart", -1);
+    outNextPageStart = -1;
+    const auto nextPageStartIt = outRoot.find("nextPageStart");
+    if (nextPageStartIt != outRoot.end() && nextPageStartIt->is_number_integer()) {
+        outNextPageStart = nextPageStartIt->get<int>();
+    }
     return true;
 }
 

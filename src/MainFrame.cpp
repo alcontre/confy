@@ -307,6 +307,7 @@ MainFrame::MainFrame()
 
     auto* fileMenu = new wxMenu();
     fileMenu->Append(kIdLoadConfig, "&Load Config...\tCtrl+O");
+    fileMenu->Append(kIdLoadFromBitbucket, "Load from &Bitbucket...");
     fileMenu->Append(kIdSaveAs, "Save &As...\tCtrl+Shift+S");
     fileMenu->AppendSeparator();
     fileMenu->Append(wxID_EXIT, "E&xit");
@@ -383,6 +384,7 @@ MainFrame::MainFrame()
     SetSizer(rootSizer);
 
     Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
+    Bind(wxEVT_MENU, &MainFrame::OnLoadFromBitbucket, this, kIdLoadFromBitbucket);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadFromBitbucket, this, kIdLoadFromBitbucket);
