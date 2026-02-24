@@ -370,6 +370,15 @@ MainFrame::MainFrame()
         loadLastConfigButton_->Show();
     }
 
+    const auto xmlRepoUrl = AppSettings::Get().GetXmlRepoUrl();
+    if (xmlRepoUrl.empty()) {
+        loadFromBitbucketButton_->Disable();
+        loadFromBitbucketButton_->SetToolTip("No XmlRepoUrl configured");
+    } else {
+        loadFromBitbucketButton_->Enable();
+        loadFromBitbucketButton_->UnsetToolTip();
+    }
+
     emptyStateSizer->AddStretchSpacer();
     emptyStatePanel_->SetSizer(emptyStateSizer);
 
