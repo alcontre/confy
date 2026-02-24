@@ -162,6 +162,32 @@ int CloseCommandPipe(FILE* pipe) {
 #endif
 }
 
+#ifdef _WIN32
+void ClearReadOnlyAttributeRecursive(const fs::path& rootPath) {
+    std::error_code ec;
+    if (!fs::exists(rootPath, ec)) {
+        return;
+    }
+
+    auto clearOne = [](const fs::path& path) {
+        const std::string nativePath = path.string();
+        const DWORD attrs = GetFileAttributesA(nativePath.c_str());
+        if (attrs == INVALID_FILE_ATTRIBUTES) {
+            return;
+        }
+        if ((attrs & FILE_ATTRIBUTE_READONLY) == 0) {
+            return;
+        }
+        SetFileAttributesA(nativePath.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY);
+    };
+
+    clearOne(rootPath);
+    for (fs::recursive_directory_iterator it(rootPath, ec), end; !ec && it != end; it.increment(ec)) {
+        clearOne(it->path());
+    }
+}
+#endif
+
 }  // namespace
 
 namespace confy {
@@ -382,6 +408,9 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
 
     const fs::path targetPath(targetDirectory);
     std::error_code fsError;
+#ifdef _WIN32
+    ClearReadOnlyAttributeRecursive(targetPath);
+#endif
     fs::remove_all(targetPath, fsError);
     if (fsError) {
         errorMessage = "Failed to clear target directory '" + targetDirectory + "': " + fsError.message();
