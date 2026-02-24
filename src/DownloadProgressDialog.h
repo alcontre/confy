@@ -46,23 +46,23 @@ private:
     void OnCancel(wxCommandEvent& event);
     void OnRetryFailed(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
-    void OnRetryComponent(std::size_t componentIndex);
+    void OnRetryJob(std::uint64_t jobId);
     void ConsumeWorkerEvents();
-    void SetRowState(std::size_t componentIndex,
+    void SetRowState(std::uint64_t jobId,
                      RowState state,
                      const wxString& status,
                      int percent,
                      bool isProgressUpdate = false,
                      std::uint64_t downloadedBytes = 0,
                      const wxString& detail = wxString());
-    void QueueRetry(std::size_t componentIndex);
+    void QueueRetry(std::uint64_t jobId);
     void UpdateDialogControls();
     bool HasActiveJobs() const;
     bool HasFailedJobs() const;
 
     std::vector<DownloadJob> jobs_;
     std::vector<ProgressRow> rows_;
-    std::unordered_map<std::size_t, std::size_t> rowIndexByComponent_;
+    std::unordered_map<std::uint64_t, std::size_t> rowIndexByJobId_;
 
     DownloadWorkerQueue worker_{6};
     wxTimer* timer_{nullptr};

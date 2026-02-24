@@ -109,7 +109,7 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Dow
         const auto& job = jobs_[i];
         const auto displayName = job.kind == DownloadJobKind::NexusArtifact ? job.artifact.componentDisplayName
                                                                             : job.source.componentDisplayName;
-        const auto componentIndex = job.ComponentIndex();
+        const auto jobId = job.JobId();
 
         auto* rowPanel = new wxPanel(rowsPanel);
         rowPanel->SetMinSize(wxSize(-1, kRowMinHeight));
@@ -153,11 +153,11 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow* parent, std::vector<Dow
         row.retryButton = retryButton;
 
         rows_.push_back(row);
-        rowIndexByComponent_[componentIndex] = i;
+        rowIndexByJobId_[jobId] = i;
 
         retryButton->Bind(wxEVT_BUTTON,
-                          [this, componentIndex](wxCommandEvent&) {
-                              OnRetryComponent(componentIndex);
+                          [this, jobId](wxCommandEvent&) {
+                              OnRetryJob(jobId);
                           });
     }
 
@@ -234,7 +234,7 @@ void DownloadProgressDialog::OnRetryFailed(wxCommandEvent&) {
 
     for (std::size_t i = 0; i < rows_.size(); ++i) {
         if (rows_[i].state == RowState::Failed) {
-            QueueRetry(jobs_[i].ComponentIndex());
+            QueueRetry(jobs_[i].JobId());
         }
     }
 
@@ -259,12 +259,12 @@ void DownloadProgressDialog::OnClose(wxCloseEvent& event) {
     event.Veto();
 }
 
-void DownloadProgressDialog::OnRetryComponent(std::size_t componentIndex) {
+void DownloadProgressDialog::OnRetryJob(std::uint64_t jobId) {
     if (cancelRequested_ || HasActiveJobs()) {
         return;
     }
 
-    QueueRetry(componentIndex);
+    QueueRetry(jobId);
     UpdateDialogControls();
 }
 
@@ -275,10 +275,10 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
         ++processed;
         switch (event.type) {
             case DownloadEventType::Started:
-                SetRowState(event.componentIndex, RowState::Running, "Starting", 0);
+                SetRowState(event.jobId, RowState::Running, "Starting", 0);
                 break;
             case DownloadEventType::Progress:
-                SetRowState(event.componentIndex,
+                SetRowState(event.jobId,
                             RowState::Running,
                             wxString::FromUTF8(event.message),
                             event.percent,
@@ -286,13 +286,13 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
                             event.downloadedBytes);
                 break;
             case DownloadEventType::Completed:
-                SetRowState(event.componentIndex, RowState::Completed, "Completed", 100);
+                SetRowState(event.jobId, RowState::Completed, "Completed", 100);
                 break;
             case DownloadEventType::Cancelled:
-                SetRowState(event.componentIndex, RowState::Failed, "Cancelled", 0);
+                SetRowState(event.jobId, RowState::Cancelled, "Cancelled", 0);
                 break;
             case DownloadEventType::Failed:
-                SetRowState(event.componentIndex,
+                SetRowState(event.jobId,
                             RowState::Failed,
                             "Failed",
                             0,
@@ -306,15 +306,15 @@ void DownloadProgressDialog::ConsumeWorkerEvents() {
     UpdateDialogControls();
 }
 
-void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
+void DownloadProgressDialog::SetRowState(std::uint64_t jobId,
                                          RowState state,
                                          const wxString& status,
                                          int percent,
                                          bool isProgressUpdate,
                                          std::uint64_t downloadedBytes,
                                          const wxString& detail) {
-    const auto it = rowIndexByComponent_.find(componentIndex);
-    if (it == rowIndexByComponent_.end()) {
+    const auto it = rowIndexByJobId_.find(jobId);
+    if (it == rowIndexByJobId_.end()) {
         return;
     }
 
@@ -363,9 +363,9 @@ void DownloadProgressDialog::SetRowState(std::size_t componentIndex,
     }
 }
 
-void DownloadProgressDialog::QueueRetry(std::size_t componentIndex) {
-    const auto it = rowIndexByComponent_.find(componentIndex);
-    if (it == rowIndexByComponent_.end()) {
+void DownloadProgressDialog::QueueRetry(std::uint64_t jobId) {
+    const auto it = rowIndexByJobId_.find(jobId);
+    if (it == rowIndexByJobId_.end()) {
         return;
     }
 
@@ -378,7 +378,7 @@ void DownloadProgressDialog::QueueRetry(std::size_t componentIndex) {
         return;
     }
 
-    SetRowState(componentIndex, RowState::Queued, "Queued", 0);
+    SetRowState(jobId, RowState::Queued, "Queued", 0);
     worker_.Submit(jobs_[it->second]);
 }
 

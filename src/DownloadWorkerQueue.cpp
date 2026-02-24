@@ -144,8 +144,22 @@ void DownloadWorkerQueue::Submit(DownloadJob job) {
 }
 
 void DownloadWorkerQueue::RequestCancelAll() {
-    cancelAllRequested_.store(true);
-    wxLogWarning("[download-worker] cancel-all requested");
+    std::vector<DownloadJob> cancelledJobs;
+    {
+        std::scoped_lock lock(queueMutex_);
+        cancelAllRequested_.store(true);
+        while (!pendingJobs_.empty()) {
+            cancelledJobs.push_back(std::move(pendingJobs_.front()));
+            pendingJobs_.pop();
+        }
+    }
+
+    for (const auto& job : cancelledJobs) {
+        PushEvent({job.JobId(), job.ComponentIndex(), DownloadEventType::Cancelled, 0, 0, "Cancelled"});
+    }
+
+    queueCv_.notify_all();
+    wxLogWarning("[download-worker] cancel-all requested; drained %zu queued job(s)", cancelledJobs.size());
 }
 
 bool DownloadWorkerQueue::TryPopEvent(DownloadEvent& outEvent) {
@@ -212,15 +226,15 @@ void DownloadWorkerQueue::WorkerLoop() {
 }
 
 void DownloadWorkerQueue::PushEvent(DownloadEvent event) {
-    // Keep only the latest progress update per component as an "easy"
+    // Keep only the latest progress update per job as an "easy"
     // backpressure mechanism to avoid overwhelming the UI with progress updates
     // when there are many files to download. For other event types, or if there
-    // is no existing progress event for the component, just push as normal.
+    // is no existing progress event for the same job, just push as normal.
     std::scoped_lock lock(eventMutex_);
     if (event.type == DownloadEventType::Progress && !events_.empty()) {
         DownloadEvent &tail = events_.back();
         if (tail.type == DownloadEventType::Progress &&
-            tail.componentIndex == event.componentIndex) {
+            tail.jobId == event.jobId) {
             tail = std::move(event);
             return;
         }
