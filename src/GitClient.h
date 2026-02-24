@@ -13,6 +13,7 @@ namespace confy {
 class GitClient final {
 public:
     using ProgressCallback = std::function<void(int percent, const std::string& message)>;
+    using CommandOutputCallback = std::function<void(std::string_view)>;
 
     explicit GitClient(AuthCredentials credentials);
 
@@ -32,8 +33,6 @@ public:
     static std::vector<std::string> ParseLsRemoteRefs(const std::string& lsRemoteOutput);
 
 private:
-    using CommandOutputCallback = std::function<void(std::string_view)>;
-
     static std::string EscapeShellArg(const std::string& value);
     static bool RunCommandCapture(const std::string& command,
                                   std::string& output,

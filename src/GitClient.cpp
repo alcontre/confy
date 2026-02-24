@@ -49,7 +49,7 @@ namespace {
 bool RunCommandCaptureWindows(const std::string& command,
                               std::string& output,
                               std::string& errorMessage,
-                              const std::function<void(std::string_view)>& outputCallback) {
+                              const confy::GitClient::CommandOutputCallback& outputCallback) {
     output.clear();
     wxLogMessage("[git-client] exec: %s", command.c_str());
 
