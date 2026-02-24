@@ -307,6 +307,7 @@ MainFrame::MainFrame()
 
     auto* fileMenu = new wxMenu();
     fileMenu->Append(kIdLoadConfig, "&Load Config...\tCtrl+O");
+    fileMenu->Append(kIdLoadLastConfig, "Load &Last");
     fileMenu->Append(kIdLoadFromBitbucket, "Load from &Bitbucket...");
     fileMenu->Append(kIdSaveAs, "Save &As...\tCtrl+Shift+S");
     fileMenu->AppendSeparator();
@@ -393,6 +394,7 @@ MainFrame::MainFrame()
     SetSizer(rootSizer);
 
     Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
+    Bind(wxEVT_MENU, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
     Bind(wxEVT_MENU, &MainFrame::OnLoadFromBitbucket, this, kIdLoadFromBitbucket);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
     Bind(wxEVT_BUTTON, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
@@ -404,6 +406,7 @@ MainFrame::MainFrame()
     Bind(wxEVT_MENU, &MainFrame::OnToggleDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSaveAs, this, kIdSaveAs);
+    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateLoadLastConfig, this, kIdLoadLastConfig);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateCopyConfig, this, kIdCopyConfig);
@@ -682,6 +685,10 @@ void MainFrame::OnUpdateDeselectAll(wxUpdateUIEvent& event) {
 
 void MainFrame::OnUpdateSaveAs(wxUpdateUIEvent& event) {
     event.Enable(!config_.components.empty());
+}
+
+void MainFrame::OnUpdateLoadLastConfig(wxUpdateUIEvent& event) {
+    event.Enable(!AppSettings::Get().GetLastConfigPath().empty());
 }
 
 void MainFrame::OnCopyConfig(wxCommandEvent&) {

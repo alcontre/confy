@@ -54,6 +54,7 @@ private:
     void OnToggleDebugConsole(wxCommandEvent& event);
     void OnFrameSize(wxSizeEvent& event);
     void OnUpdateSaveAs(wxUpdateUIEvent& event);
+    void OnUpdateLoadLastConfig(wxUpdateUIEvent& event);
     void OnUpdateSelectAll(wxUpdateUIEvent& event);
     void OnUpdateDeselectAll(wxUpdateUIEvent& event);
     void OnUpdateCopyConfig(wxUpdateUIEvent& event);
