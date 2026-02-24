@@ -45,6 +45,7 @@ private:
 
     void OnLoadConfig(wxCommandEvent& event);
     void OnLoadLastConfig(wxCommandEvent& event);
+    void OnLoadFromBitbucket(wxCommandEvent& event);
     void OnSaveAs(wxCommandEvent& event);
     void OnApply(wxCommandEvent& event);
     void OnSelectAll(wxCommandEvent& event);
@@ -94,6 +95,7 @@ private:
     wxPanel* emptyStatePanel_{nullptr};
     wxButton* loadConfigButton_{nullptr};
     wxButton* loadLastConfigButton_{nullptr};
+    wxButton* loadFromBitbucketButton_{nullptr};
     wxButton* applyButton_{nullptr};
     std::vector<ComponentRowWidgets> rows_;
     std::vector<ComponentMetadataState> metadataState_;

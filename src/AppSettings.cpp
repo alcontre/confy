@@ -44,4 +44,15 @@ void AppSettings::SetLastConfigPath(const std::string& path) {
     config_->Flush();
 }
 
+std::string AppSettings::GetXmlRepoUrl() const {
+    wxString value;
+    config_->Read("/XmlRepoUrl", &value);
+    return value.ToStdString();
+}
+
+void AppSettings::SetXmlRepoUrl(const std::string& url) {
+    config_->Write("/XmlRepoUrl", wxString(url));
+    config_->Flush();
+}
+
 }  // namespace confy

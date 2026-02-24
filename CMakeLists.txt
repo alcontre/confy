@@ -35,6 +35,7 @@ set(CONFY_SOURCES
     src/DownloadProgressDialog.cpp
     src/NexusClient.cpp
     src/GitClient.cpp
+    src/BitbucketClient.cpp
     src/AuthCredentials.cpp
 )
 
@@ -51,6 +52,7 @@ set(CONFY_HEADERS
     src/DownloadProgressDialog.h
     src/NexusClient.h
     src/GitClient.h
+    src/BitbucketClient.h
     src/AuthCredentials.h
 )
 
@@ -137,6 +139,18 @@ target_include_directories(confy_git_client_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
 )
 
+add_executable(confy_bitbucket_client_test
+    tests/BitbucketClientTest.cpp
+    src/BitbucketClient.cpp
+    src/AuthCredentials.cpp
+)
+target_include_directories(confy_bitbucket_client_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/single_include
+)
+target_link_libraries(confy_bitbucket_client_test PRIVATE CURL::libcurl)
+
 enable_testing()
 add_test(
     NAME parser_smoke
@@ -171,6 +185,11 @@ add_test(
 add_test(
     NAME git_client
     COMMAND confy_git_client_test
+)
+
+add_test(
+    NAME bitbucket_client
+    COMMAND confy_bitbucket_client_test
 )
 
 if(MSVC)

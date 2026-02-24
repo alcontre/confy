@@ -14,6 +14,8 @@ public:
 
     std::string GetLastConfigPath() const;
     void SetLastConfigPath(const std::string& path);
+    std::string GetXmlRepoUrl() const;
+    void SetXmlRepoUrl(const std::string& url);
 
 private:
     explicit AppSettings(const std::string& executableDir);
