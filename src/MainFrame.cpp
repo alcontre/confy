@@ -336,16 +336,12 @@ MainFrame::MainFrame()
 
     componentScroll_ = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
     componentScroll_->SetScrollRate(0, 6);
+    componentScroll_->ShowScrollbars(wxSHOW_SB_NEVER, wxSHOW_SB_DEFAULT);
 
-    componentContentPanel_ = new wxPanel(componentScroll_);
     componentListSizer_ = new wxBoxSizer(wxVERTICAL);
-    componentContentPanel_->SetSizer(componentListSizer_);
+    componentScroll_->SetSizer(componentListSizer_);
 
-    auto* scrollSizer = new wxBoxSizer(wxVERTICAL);
-    scrollSizer->Add(componentContentPanel_, 1, wxEXPAND);
-    componentScroll_->SetSizer(scrollSizer);
-
-    emptyStatePanel_ = new wxPanel(componentContentPanel_);
+    emptyStatePanel_ = new wxPanel(componentScroll_);
     auto* emptyStateSizer = new wxBoxSizer(wxVERTICAL);
     emptyStateSizer->AddStretchSpacer();
 
@@ -412,7 +408,9 @@ MainFrame::MainFrame()
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateCopyConfig, this, kIdCopyConfig);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
-    Bind(wxEVT_SIZE, &MainFrame::OnFrameSize, this);
+
+    RelayoutComponentArea();
+    SyncComponentAreaVirtualSize();
 }
 
 MainFrame::~MainFrame() {
@@ -724,19 +722,25 @@ void MainFrame::OnUpdateDebugConsole(wxUpdateUIEvent& event) {
     event.Check(IsDebugConsoleVisible());
 }
 
-void MainFrame::OnFrameSize(wxSizeEvent& event) {
-    event.Skip();
-    RelayoutComponentArea();
+void MainFrame::RelayoutComponentArea() {
+    componentScroll_->Layout();
 }
 
-void MainFrame::RelayoutComponentArea() {
-    componentContentPanel_->Layout();
-    componentScroll_->Layout();
-    componentScroll_->FitInside();
+void MainFrame::SyncComponentAreaVirtualSize() {
+    if (componentListSizer_ == nullptr || componentScroll_ == nullptr) {
+        return;
+    }
+
+    const int viewportWidth = std::max(1, componentScroll_->GetClientSize().GetWidth());
+    const int contentHeight = std::max(1, componentListSizer_->CalcMin().GetHeight());
+    componentScroll_->SetVirtualSize(viewportWidth, contentHeight);
 }
 
 void MainFrame::RenderConfig() {
     StopMetadataWorkers();
+    Freeze();
+    componentScroll_->Freeze();
+
     uiUpdating_ = true;
     componentListSizer_->Clear(true);
     emptyStatePanel_ = nullptr;
@@ -759,6 +763,7 @@ void MainFrame::RenderConfig() {
     }
 
     RelayoutComponentArea();
+    SyncComponentAreaVirtualSize();
     uiUpdating_ = false;
 
     statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
@@ -770,6 +775,9 @@ void MainFrame::RenderConfig() {
     }
     applyButton_->Enable(!config_.components.empty());
     Layout();
+
+    componentScroll_->Thaw();
+    Thaw();
 
     StartMetadataWorkers();
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
@@ -787,7 +795,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
     const auto displayName = component.displayName;
     auto* rowBox = new wxStaticBoxSizer(wxVERTICAL,
-                                        componentContentPanel_,
+                                        componentScroll_,
                                         wxString::Format("%s  (%s)", displayName, component.path));
     auto* rowParent = rowBox->GetStaticBox();
 
@@ -927,12 +935,18 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
 void MainFrame::UpdateComboTooltip(wxComboBox& comboBox) {
     const auto value = comboBox.GetValue();
+    const auto currentTooltip = comboBox.GetToolTipText();
+
     if (value.empty()) {
-        comboBox.UnsetToolTip();
+        if (!currentTooltip.empty()) {
+            comboBox.UnsetToolTip();
+        }
         return;
     }
 
-    comboBox.SetToolTip(value);
+    if (currentTooltip != value) {
+        comboBox.SetToolTip(value);
+    }
 }
 
 void MainFrame::UpdateRowTooltips(std::size_t componentIndex) {

@@ -19,7 +19,6 @@ class wxButton;
 class wxCheckBox;
 class wxComboBox;
 class wxCommandEvent;
-class wxSizeEvent;
 class wxUpdateUIEvent;
 class wxPanel;
 class wxScrolledWindow;
@@ -52,7 +51,6 @@ private:
     void OnDeselectAll(wxCommandEvent& event);
     void OnCopyConfig(wxCommandEvent& event);
     void OnToggleDebugConsole(wxCommandEvent& event);
-    void OnFrameSize(wxSizeEvent& event);
     void OnUpdateSaveAs(wxUpdateUIEvent& event);
     void OnUpdateLoadLastConfig(wxUpdateUIEvent& event);
     void OnUpdateSelectAll(wxUpdateUIEvent& event);
@@ -60,6 +58,7 @@ private:
     void OnUpdateCopyConfig(wxUpdateUIEvent& event);
     void OnUpdateDebugConsole(wxUpdateUIEvent& event);
     void RelayoutComponentArea();
+    void SyncComponentAreaVirtualSize();
     void RenderConfig();
     void LoadConfigFromPath(const wxString& path);
     void AddComponentRow(std::size_t componentIndex);
@@ -91,7 +90,6 @@ private:
     ConfigModel config_;
     wxStaticText* statusLabel_{nullptr};
     wxScrolledWindow* componentScroll_{nullptr};
-    wxPanel* componentContentPanel_{nullptr};
     wxSizer* componentListSizer_{nullptr};
     wxPanel* emptyStatePanel_{nullptr};
     wxButton* loadConfigButton_{nullptr};
