@@ -1,11 +1,13 @@
 #include "GitClient.h"
 
 #include <array>
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <filesystem>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <vector>
 
 #if defined(__has_include)
@@ -46,7 +48,8 @@ namespace {
 #ifdef _WIN32
 bool RunCommandCaptureWindows(const std::string& command,
                               std::string& output,
-                              std::string& errorMessage) {
+                              std::string& errorMessage,
+                              const confy::GitClient::CommandOutputCallback& outputCallback) {
     output.clear();
     wxLogMessage("[git-client] exec: %s", command.c_str());
 
@@ -104,6 +107,9 @@ bool RunCommandCaptureWindows(const std::string& command,
     while (ReadFile(readPipe, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr) &&
            bytesRead > 0) {
         output.append(buffer.data(), bytesRead);
+        if (outputCallback) {
+            outputCallback(std::string_view(buffer.data(), bytesRead));
+        }
     }
 
     CloseHandle(readPipe);
@@ -138,6 +144,132 @@ bool RunCommandCaptureWindows(const std::string& command,
     return true;
 }
 #endif
+
+bool TryParsePercent(std::string_view line, int& outPercent) {
+    for (std::size_t i = 0; i < line.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(line[i]))) {
+            continue;
+        }
+
+        int value = 0;
+        std::size_t j = i;
+        while (j < line.size() && std::isdigit(static_cast<unsigned char>(line[j]))) {
+            value = value * 10 + (line[j] - '0');
+            ++j;
+        }
+        if (j < line.size() && line[j] == '%') {
+            outPercent = value;
+            return true;
+        }
+        i = j;
+    }
+    return false;
+}
+
+void ReportMappedProgress(const confy::GitClient::ProgressCallback& progress,
+                          int stageMin,
+                          int stageMax,
+                          int stagePercent,
+                          const std::string& message,
+                          int& lastReportedPercent) {
+    if (!progress) {
+        return;
+    }
+
+    if (stagePercent < 0) {
+        stagePercent = 0;
+    }
+    if (stagePercent > 100) {
+        stagePercent = 100;
+    }
+
+    const int mapped = stageMin + ((stageMax - stageMin) * stagePercent) / 100;
+    if (mapped <= lastReportedPercent) {
+        return;
+    }
+
+    lastReportedPercent = mapped;
+    progress(mapped, message);
+}
+
+void ProcessGitProgressLine(const std::string& line,
+                            const confy::GitClient::ProgressCallback& progress,
+                            bool submodulePhase,
+                            int& lastReportedPercent) {
+    int stagePercent = 0;
+
+    if (line.find("Counting objects:") != std::string::npos && TryParsePercent(line, stagePercent)) {
+        const int stageMin = submodulePhase ? 80 : 10;
+        const int stageMax = submodulePhase ? 86 : 28;
+        ReportMappedProgress(progress, stageMin, stageMax, stagePercent, "Counting objects", lastReportedPercent);
+        return;
+    }
+
+    if (line.find("Compressing objects:") != std::string::npos && TryParsePercent(line, stagePercent)) {
+        const int stageMin = submodulePhase ? 86 : 28;
+        const int stageMax = submodulePhase ? 90 : 44;
+        ReportMappedProgress(progress,
+                             stageMin,
+                             stageMax,
+                             stagePercent,
+                             "Compressing objects",
+                             lastReportedPercent);
+        return;
+    }
+
+    if (line.find("Receiving objects:") != std::string::npos && TryParsePercent(line, stagePercent)) {
+        const int stageMin = submodulePhase ? 90 : 44;
+        const int stageMax = submodulePhase ? 96 : 80;
+        ReportMappedProgress(progress, stageMin, stageMax, stagePercent, "Receiving objects", lastReportedPercent);
+        return;
+    }
+
+    if (line.find("Resolving deltas:") != std::string::npos && TryParsePercent(line, stagePercent)) {
+        const int stageMin = submodulePhase ? 96 : 80;
+        const int stageMax = submodulePhase ? 99 : 94;
+        ReportMappedProgress(progress, stageMin, stageMax, stagePercent, "Resolving deltas", lastReportedPercent);
+        return;
+    }
+
+    if (line.find("Checking out files:") != std::string::npos && TryParsePercent(line, stagePercent)) {
+        const int stageMin = submodulePhase ? 99 : 94;
+        const int stageMax = submodulePhase ? 100 : 99;
+        ReportMappedProgress(progress, stageMin, stageMax, stagePercent, "Checking out files", lastReportedPercent);
+        return;
+    }
+}
+
+void PumpProgressFromChunk(const confy::GitClient::ProgressCallback& progress,
+                          std::string_view chunk,
+                          bool submodulePhase,
+                          std::string& partialLine,
+                          int& lastReportedPercent) {
+    if (!progress || chunk.empty()) {
+        return;
+    }
+
+    partialLine.append(chunk.data(), chunk.size());
+    std::size_t consumed = 0;
+
+    for (std::size_t i = 0; i < partialLine.size(); ++i) {
+        if (partialLine[i] != '\n' && partialLine[i] != '\r') {
+            continue;
+        }
+
+        const std::string line = partialLine.substr(consumed, i - consumed);
+        ProcessGitProgressLine(line, progress, submodulePhase, lastReportedPercent);
+
+        while (i + 1 < partialLine.size() &&
+               (partialLine[i + 1] == '\n' || partialLine[i + 1] == '\r')) {
+            ++i;
+        }
+        consumed = i + 1;
+    }
+
+    if (consumed > 0) {
+        partialLine.erase(0, consumed);
+    }
+}
 
 std::string NormalizeRepositoryUrl(std::string repositoryUrl) {
     while (repositoryUrl.size() > 1 && repositoryUrl.back() == '/') {
@@ -292,9 +424,10 @@ int GitClient::DecodeExitCode(int rawExitCode) {
 
 bool GitClient::RunCommandCapture(const std::string& command,
                                   std::string& output,
-                                  std::string& errorMessage) {
+                                  std::string& errorMessage,
+                                  CommandOutputCallback outputCallback) {
 #ifdef _WIN32
-    return RunCommandCaptureWindows(command, output, errorMessage);
+    return RunCommandCaptureWindows(command, output, errorMessage, outputCallback);
 #else
     output.clear();
     std::array<char, 512> buffer{};
@@ -308,8 +441,26 @@ bool GitClient::RunCommandCapture(const std::string& command,
         return false;
     }
 
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-        output.append(buffer.data());
+    while (true) {
+        const auto readCount = std::fread(buffer.data(), 1, buffer.size(), pipe);
+        if (readCount > 0) {
+            output.append(buffer.data(), readCount);
+            if (outputCallback) {
+                outputCallback(std::string_view(buffer.data(), readCount));
+            }
+        }
+
+        if (readCount < buffer.size()) {
+            if (std::ferror(pipe) != 0) {
+                errorMessage = "Failed to read process output: " + command;
+                CloseCommandPipe(pipe);
+                wxLogError("[git-client] failed while reading process output");
+                return false;
+            }
+            if (std::feof(pipe) != 0) {
+                break;
+            }
+        }
     }
 
     const int rawExit = CloseCommandPipe(pipe);
@@ -427,12 +578,15 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
         progress(5, "Cloning repository");
     }
 
+    int lastReportedPercent = 5;
+    std::string clonePartialLine;
+
     std::string output;
     std::string command = "git ";
     if (!authConfigArg.empty()) {
         command += authConfigArg + " ";
     }
-    command += "clone --recursive ";
+    command += "clone --recursive --progress ";
     if (shallow) {
         command += "--depth 1 --shallow-submodules ";
     }
@@ -441,8 +595,21 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
     }
     command += EscapeShellArg(normalizedRepositoryUrl) + " " + EscapeShellArg(targetDirectory);
 
-    if (!RunCommandCapture(command, output, errorMessage)) {
+    if (!RunCommandCapture(
+            command,
+            output,
+            errorMessage,
+            [&](std::string_view chunk) {
+                PumpProgressFromChunk(progress,
+                                     chunk,
+                                     false,
+                                     clonePartialLine,
+                                     lastReportedPercent);
+            })) {
         return false;
+    }
+    if (!clonePartialLine.empty()) {
+        ProcessGitProgressLine(clonePartialLine, progress, false, lastReportedPercent);
     }
 
     if (cancelRequested.load()) {
@@ -451,21 +618,38 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
     }
 
     if (progress) {
-        progress(75, "Updating submodules");
+        const int kickoff = lastReportedPercent < 80 ? 80 : lastReportedPercent;
+        progress(kickoff, "Updating submodules");
+        lastReportedPercent = kickoff;
     }
+
+    std::string submodulePartialLine;
 
     std::string submoduleCommand = "git ";
     if (!authConfigArg.empty()) {
         submoduleCommand += authConfigArg + " ";
     }
     submoduleCommand +=
-        "-C " + EscapeShellArg(targetDirectory) + " submodule update --init --recursive";
+        "-C " + EscapeShellArg(targetDirectory) + " submodule update --init --recursive --progress";
     if (shallow) {
         submoduleCommand += " --depth 1";
     }
 
-    if (!RunCommandCapture(submoduleCommand, output, errorMessage)) {
+    if (!RunCommandCapture(
+            submoduleCommand,
+            output,
+            errorMessage,
+            [&](std::string_view chunk) {
+                PumpProgressFromChunk(progress,
+                                     chunk,
+                                     true,
+                                     submodulePartialLine,
+                                     lastReportedPercent);
+            })) {
         return false;
+    }
+    if (!submodulePartialLine.empty()) {
+        ProcessGitProgressLine(submodulePartialLine, progress, true, lastReportedPercent);
     }
 
     if (progress) {

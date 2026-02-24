@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace confy {
@@ -31,10 +32,13 @@ public:
     static std::vector<std::string> ParseLsRemoteRefs(const std::string& lsRemoteOutput);
 
 private:
+    using CommandOutputCallback = std::function<void(std::string_view)>;
+
     static std::string EscapeShellArg(const std::string& value);
     static bool RunCommandCapture(const std::string& command,
                                   std::string& output,
-                                  std::string& errorMessage);
+                                  std::string& errorMessage,
+                                  CommandOutputCallback outputCallback = nullptr);
     static int DecodeExitCode(int rawExitCode);
 
     bool BuildAuthConfigArg(const std::string& repositoryUrl,
