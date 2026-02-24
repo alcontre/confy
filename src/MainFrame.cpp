@@ -21,6 +21,7 @@
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/listbox.h>
+#include <wx/log.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
@@ -436,49 +437,62 @@ void MainFrame::OnLoadLastConfig(wxCommandEvent&) {
 }
 
 void MainFrame::OnLoadFromBitbucket(wxCommandEvent&) {
+    wxLogMessage("[bitbucket] UI action: Load from Bitbucket clicked");
     const auto repoUrl = AppSettings::Get().GetXmlRepoUrl();
     if (repoUrl.empty()) {
+        wxLogError("[bitbucket] Missing /XmlRepoUrl in confy.conf");
         wxMessageBox("Missing XML repo in confy.conf. Set /XmlRepoUrl before using Load from Bitbucket.",
                      "Bitbucket",
                      wxOK | wxICON_ERROR,
                      this);
         return;
     }
+    wxLogMessage("[bitbucket] Using configured repo url=%s", repoUrl.c_str());
 
     const auto settingsPath = ResolveM2SettingsPath();
     if (settingsPath.empty()) {
+        wxLogError("[bitbucket] Unable to resolve m2 settings path");
         wxMessageBox("Unable to resolve home directory for ~/.m2/settings.xml.",
                      "Bitbucket auth",
                      wxOK | wxICON_ERROR,
                      this);
         return;
     }
+    wxLogMessage("[bitbucket] Loading credentials from %s", settingsPath.c_str());
 
     AuthCredentials credentials;
     std::string authError;
     if (!credentials.LoadFromM2SettingsXml(settingsPath, authError)) {
+        wxLogError("[bitbucket] Failed loading credentials: %s", authError.c_str());
         wxMessageBox(wxString("Unable to load Maven credentials: ") + authError,
                      "Bitbucket auth",
                      wxOK | wxICON_ERROR,
                      this);
         return;
     }
+    wxLogMessage("[bitbucket] Credentials loaded from m2 settings");
 
     BitbucketClient client(std::move(credentials));
     BitbucketLoadDialog dialog(this, client, repoUrl);
     if (dialog.ShowModal() != wxID_OK) {
+        wxLogMessage("[bitbucket] User canceled Bitbucket file selection dialog");
         return;
     }
 
     const auto branch = dialog.SelectedBranch();
     const auto filePath = dialog.SelectedFile();
     if (repoUrl.empty() || branch.empty() || filePath.empty()) {
+        wxLogError("[bitbucket] Missing selection after dialog repo=%s branch=%s file=%s",
+                   repoUrl.c_str(),
+                   branch.c_str(),
+                   filePath.c_str());
         wxMessageBox("Missing repository, branch, or XML file selection.",
                      "Bitbucket",
                      wxOK | wxICON_ERROR,
                      this);
         return;
     }
+    wxLogMessage("[bitbucket] Selected branch=%s file=%s", branch.c_str(), filePath.c_str());
 
     const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
     wxFileName executableFile(executablePath);
@@ -495,10 +509,12 @@ void MainFrame::OnLoadFromBitbucket(wxCommandEvent&) {
 
     std::string downloadError;
     if (!client.DownloadFile(repoUrl, branch, filePath, outputPath.ToStdString(), downloadError)) {
+        wxLogError("[bitbucket] Download failed: %s", downloadError.c_str());
         SetStatusText("Config: none");
         wxMessageBox(downloadError, "Bitbucket download failed", wxOK | wxICON_ERROR, this);
         return;
     }
+    wxLogMessage("[bitbucket] Download completed to %s", outputPath.ToStdString().c_str());
 
     SetStatusText("Loading downloaded XML...");
     wxYieldIfNeeded();

@@ -11,6 +11,36 @@
 
 #include <nlohmann/json.hpp>
 
+#if defined(__has_include)
+#if __has_include(<wx/log.h>)
+#include <wx/log.h>
+#define CONFY_HAS_WX_LOG 1
+#endif
+#endif
+
+#ifndef CONFY_HAS_WX_LOG
+#include <cstdarg>
+#include <cstdio>
+namespace {
+
+void FallbackLog(const char* level, const char* format, ...) {
+    std::fprintf(stderr, "[bitbucket-client][%s] ", level);
+
+    va_list args;
+    va_start(args, format);
+    std::vfprintf(stderr, format, args);
+    va_end(args);
+
+    std::fprintf(stderr, "\n");
+}
+
+}  // namespace
+
+#define wxLogMessage(...) FallbackLog("INFO", __VA_ARGS__)
+#define wxLogWarning(...) FallbackLog("WARN", __VA_ARGS__)
+#define wxLogError(...) FallbackLog("ERROR", __VA_ARGS__)
+#endif
+
 namespace {
 
 using Json = nlohmann::json;
@@ -69,16 +99,24 @@ bool BitbucketClient::ListBranches(const std::string& repositoryUrl,
                                    std::vector<std::string>& outBranches,
                                    std::string& errorMessage) const {
     outBranches.clear();
+    wxLogMessage("[bitbucket] ListBranches start repo=%s", repositoryUrl.c_str());
 
     RepoCoordinates repo;
     if (!ParseRepositoryUrl(repositoryUrl, repo, errorMessage)) {
+        wxLogError("[bitbucket] ListBranches failed parse url: %s", errorMessage.c_str());
         return false;
     }
 
     ServerCredentials creds;
     if (!GetCredentialsForRepo(repo, creds, errorMessage)) {
+        wxLogError("[bitbucket] ListBranches credentials lookup failed host=%s: %s",
+                   repo.hostPort.c_str(),
+                   errorMessage.c_str());
         return false;
     }
+    wxLogMessage("[bitbucket] ListBranches using host=%s user=%s",
+                 repo.hostPort.c_str(),
+                 creds.username.empty() ? "<empty>" : creds.username.c_str());
 
     constexpr int kPageLimit = 100;
     int start = 0;
@@ -92,6 +130,7 @@ bool BitbucketClient::ListBranches(const std::string& repositoryUrl,
 
         std::string body;
         if (!HttpGetText(endpoint, creds, body, errorMessage)) {
+            wxLogError("[bitbucket] ListBranches request failed url=%s: %s", endpoint.c_str(), errorMessage.c_str());
             return false;
         }
 
@@ -122,6 +161,7 @@ bool BitbucketClient::ListBranches(const std::string& repositoryUrl,
     }
 
     outBranches.assign(uniqueBranches.begin(), uniqueBranches.end());
+    wxLogMessage("[bitbucket] ListBranches success count=%zu", outBranches.size());
     return true;
 }
 
@@ -130,14 +170,21 @@ bool BitbucketClient::ListTopLevelXmlFiles(const std::string& repositoryUrl,
                                            std::vector<std::string>& outFiles,
                                            std::string& errorMessage) const {
     outFiles.clear();
+    wxLogMessage("[bitbucket] ListTopLevelXmlFiles start repo=%s branch=%s",
+                 repositoryUrl.c_str(),
+                 branch.c_str());
 
     RepoCoordinates repo;
     if (!ParseRepositoryUrl(repositoryUrl, repo, errorMessage)) {
+        wxLogError("[bitbucket] ListTopLevelXmlFiles failed parse url: %s", errorMessage.c_str());
         return false;
     }
 
     ServerCredentials creds;
     if (!GetCredentialsForRepo(repo, creds, errorMessage)) {
+        wxLogError("[bitbucket] ListTopLevelXmlFiles credentials lookup failed host=%s: %s",
+                   repo.hostPort.c_str(),
+                   errorMessage.c_str());
         return false;
     }
 
@@ -154,6 +201,9 @@ bool BitbucketClient::ListTopLevelXmlFiles(const std::string& repositoryUrl,
 
         std::string body;
         if (!HttpGetText(endpoint, creds, body, errorMessage)) {
+            wxLogError("[bitbucket] ListTopLevelXmlFiles request failed url=%s: %s",
+                       endpoint.c_str(),
+                       errorMessage.c_str());
             return false;
         }
 
@@ -184,6 +234,9 @@ bool BitbucketClient::ListTopLevelXmlFiles(const std::string& repositoryUrl,
     }
 
     outFiles.assign(uniqueFiles.begin(), uniqueFiles.end());
+    wxLogMessage("[bitbucket] ListTopLevelXmlFiles success branch=%s xml_count=%zu",
+                 branchRef.c_str(),
+                 outFiles.size());
     return true;
 }
 
@@ -192,13 +245,22 @@ bool BitbucketClient::DownloadFile(const std::string& repositoryUrl,
                                    const std::string& filePath,
                                    const std::string& outputPath,
                                    std::string& errorMessage) const {
+    wxLogMessage("[bitbucket] DownloadFile start repo=%s branch=%s file=%s out=%s",
+                 repositoryUrl.c_str(),
+                 branch.c_str(),
+                 filePath.c_str(),
+                 outputPath.c_str());
     RepoCoordinates repo;
     if (!ParseRepositoryUrl(repositoryUrl, repo, errorMessage)) {
+        wxLogError("[bitbucket] DownloadFile failed parse url: %s", errorMessage.c_str());
         return false;
     }
 
     ServerCredentials creds;
     if (!GetCredentialsForRepo(repo, creds, errorMessage)) {
+        wxLogError("[bitbucket] DownloadFile credentials lookup failed host=%s: %s",
+                   repo.hostPort.c_str(),
+                   errorMessage.c_str());
         return false;
     }
 
@@ -207,7 +269,13 @@ bool BitbucketClient::DownloadFile(const std::string& repositoryUrl,
         "/repos/" + UrlEncode(repo.repositorySlug) + "/raw/" + EncodePath(filePath) +
         "?at=" + UrlEncode("refs/heads/" + branchRef);
 
-    return HttpDownloadBinary(endpoint, creds, outputPath, errorMessage);
+    const auto ok = HttpDownloadBinary(endpoint, creds, outputPath, errorMessage);
+    if (!ok) {
+        wxLogError("[bitbucket] DownloadFile request failed url=%s: %s", endpoint.c_str(), errorMessage.c_str());
+        return false;
+    }
+    wxLogMessage("[bitbucket] DownloadFile success file=%s", filePath.c_str());
+    return true;
 }
 
 bool BitbucketClient::ParseRepositoryUrl(const std::string& repositoryUrl,
@@ -222,6 +290,7 @@ bool BitbucketClient::ParseRepositoryUrl(const std::string& repositoryUrl,
     if (!std::regex_match(repositoryUrl, match, kScmPattern) &&
         !std::regex_match(repositoryUrl, match, kProjectsPattern)) {
         errorMessage = "Unsupported Bitbucket repository URL. Expected /scm/<project>/<repo>.git or /projects/<project>/repos/<repo>.";
+        wxLogError("[bitbucket] ParseRepositoryUrl unsupported url=%s", repositoryUrl.c_str());
         return false;
     }
 
@@ -231,8 +300,13 @@ bool BitbucketClient::ParseRepositoryUrl(const std::string& repositoryUrl,
     out.repositorySlug = match[4].str();
     if (out.projectKey.empty() || out.repositorySlug.empty()) {
         errorMessage = "Bitbucket repository URL is missing project or repository segment.";
+        wxLogError("[bitbucket] ParseRepositoryUrl missing segments url=%s", repositoryUrl.c_str());
         return false;
     }
+    wxLogMessage("[bitbucket] ParseRepositoryUrl success host=%s project=%s repo=%s",
+                 out.hostPort.c_str(),
+                 out.projectKey.c_str(),
+                 out.repositorySlug.c_str());
     return true;
 }
 
@@ -241,8 +315,12 @@ bool BitbucketClient::GetCredentialsForRepo(const RepoCoordinates& repo,
                                             std::string& errorMessage) const {
     if (!credentials_.TryGetForHost(repo.hostPort, outCredentials) || outCredentials.password.empty()) {
         errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+        wxLogError("[bitbucket] Credentials not found for host=%s", repo.hostPort.c_str());
         return false;
     }
+    wxLogMessage("[bitbucket] Credentials found for host=%s user=%s",
+                 repo.hostPort.c_str(),
+                 outCredentials.username.empty() ? "<empty>" : outCredentials.username.c_str());
     return true;
 }
 
@@ -251,6 +329,7 @@ bool BitbucketClient::HttpGetText(const std::string& url,
                                   std::string& outBody,
                                   std::string& errorMessage) const {
     outBody.clear();
+    wxLogMessage("[bitbucket] HTTP GET %s", url.c_str());
 
     CURL* curl = curl_easy_init();
     if (!curl) {
@@ -280,12 +359,23 @@ bool BitbucketClient::HttpGetText(const std::string& url,
 
     if (result != CURLE_OK) {
         errorMessage = "HTTP request failed: " + std::string(curl_easy_strerror(result));
+        wxLogError("[bitbucket] HTTP GET transport error url=%s error=%s",
+                   url.c_str(),
+                   errorMessage.c_str());
         return false;
     }
     if (statusCode < 200 || statusCode >= 300) {
+        const auto snippetLength = std::min<std::size_t>(outBody.size(), 256);
+        const auto bodySnippet = outBody.substr(0, snippetLength);
         errorMessage = "Bitbucket API request failed with status " + std::to_string(statusCode) + ".";
+        wxLogError("[bitbucket] HTTP GET non-success status=%ld url=%s body=%s",
+                   statusCode,
+                   url.c_str(),
+                   bodySnippet.c_str());
         return false;
     }
+
+    wxLogMessage("[bitbucket] HTTP GET status=%ld bytes=%zu", statusCode, outBody.size());
 
     return true;
 }
@@ -294,15 +384,18 @@ bool BitbucketClient::HttpDownloadBinary(const std::string& url,
                                          const ServerCredentials& creds,
                                          const std::string& outFile,
                                          std::string& errorMessage) const {
+    wxLogMessage("[bitbucket] HTTP DOWNLOAD %s -> %s", url.c_str(), outFile.c_str());
     std::ofstream output(outFile, std::ios::binary | std::ios::trunc);
     if (!output) {
         errorMessage = "Unable to open output file: " + outFile;
+        wxLogError("[bitbucket] Download open file failed path=%s", outFile.c_str());
         return false;
     }
 
     CURL* curl = curl_easy_init();
     if (!curl) {
         errorMessage = "Unable to initialize HTTP client.";
+        wxLogError("[bitbucket] Download curl init failed");
         return false;
     }
 
@@ -324,12 +417,18 @@ bool BitbucketClient::HttpDownloadBinary(const std::string& url,
 
     if (result != CURLE_OK) {
         errorMessage = "File download failed: " + std::string(curl_easy_strerror(result));
+        wxLogError("[bitbucket] HTTP DOWNLOAD transport error url=%s error=%s",
+                   url.c_str(),
+                   errorMessage.c_str());
         return false;
     }
     if (statusCode < 200 || statusCode >= 300) {
         errorMessage = "Bitbucket raw file request failed with status " + std::to_string(statusCode) + ".";
+        wxLogError("[bitbucket] HTTP DOWNLOAD non-success status=%ld url=%s", statusCode, url.c_str());
         return false;
     }
+
+    wxLogMessage("[bitbucket] HTTP DOWNLOAD success status=%ld", statusCode);
 
     return true;
 }
