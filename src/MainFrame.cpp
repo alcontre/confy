@@ -801,6 +801,11 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     auto* titleLabel = new wxStaticText(rowPanel,
                                         wxID_ANY,
                                         wxString::Format("%s  (%s)", displayName, component.path));
+    {
+        auto titleFont = titleLabel->GetFont();
+        titleFont.SetWeight(wxFONTWEIGHT_BOLD);
+        titleLabel->SetFont(titleFont);
+    }
     rowContainer->Add(titleLabel, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
 
     auto* rowParent = rowPanel;
