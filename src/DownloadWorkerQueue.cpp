@@ -378,6 +378,9 @@ void DownloadWorkerQueue::ProcessJob(const DownloadJob& job) {
     const std::string homeDir = homeEnv ? homeEnv : "";
 #endif
     if (homeDir.empty()) {
+        wxLogError("[download-worker] failed source jobId=%llu component='%s' reason='Missing home directory'",
+                   static_cast<unsigned long long>(source.jobId),
+                   source.componentName.c_str());
         PushEvent({source.jobId, source.componentIndex, DownloadEventType::Failed, 0, 0, "Missing home directory"});
         return;
     }
@@ -386,6 +389,10 @@ void DownloadWorkerQueue::ProcessJob(const DownloadJob& job) {
     std::string credentialError;
     const std::string settingsPath = (std::filesystem::path(homeDir) / ".m2" / "settings.xml").string();
     if (!credentials.LoadFromM2SettingsXml(settingsPath, credentialError)) {
+        wxLogError("[download-worker] failed source jobId=%llu component='%s' reason='Credential load failed: %s'",
+                   static_cast<unsigned long long>(source.jobId),
+                   source.componentName.c_str(),
+                   credentialError.c_str());
         PushEvent({source.jobId,
                    source.componentIndex,
                    DownloadEventType::Failed,
@@ -410,8 +417,15 @@ void DownloadWorkerQueue::ProcessJob(const DownloadJob& job) {
 
     if (!ok) {
         if (cancelAllRequested_.load() || error == "Cancelled") {
+            wxLogWarning("[download-worker] cancelled source jobId=%llu component='%s'",
+                         static_cast<unsigned long long>(source.jobId),
+                         source.componentName.c_str());
             PushEvent({source.jobId, source.componentIndex, DownloadEventType::Cancelled, 0, 0, "Cancelled"});
         } else {
+            wxLogError("[download-worker] failed source jobId=%llu component='%s' error='%s'",
+                       static_cast<unsigned long long>(source.jobId),
+                       source.componentName.c_str(),
+                       error.c_str());
             PushEvent({source.jobId, source.componentIndex, DownloadEventType::Failed, 0, 0, error});
         }
         return;
@@ -431,6 +445,9 @@ void DownloadWorkerQueue::ProcessJob(const DownloadJob& job) {
         return;
     }
 
+    wxLogMessage("[download-worker] completed source jobId=%llu component='%s'",
+                 static_cast<unsigned long long>(source.jobId),
+                 source.componentName.c_str());
     PushEvent({source.jobId, source.componentIndex, DownloadEventType::Completed, 100, 0, "Completed"});
 }
 

@@ -151,6 +151,19 @@ target_include_directories(confy_bitbucket_client_test PRIVATE
 )
 target_link_libraries(confy_bitbucket_client_test PRIVATE CURL::libcurl)
 
+add_executable(confy_download_worker_queue_test
+    tests/DownloadWorkerQueueTest.cpp
+    src/DownloadWorkerQueue.cpp
+    src/NexusClient.cpp
+    src/GitClient.cpp
+    src/AuthCredentials.cpp
+)
+target_include_directories(confy_download_worker_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
+)
+target_link_libraries(confy_download_worker_queue_test PRIVATE wx::base CURL::libcurl)
+
 enable_testing()
 add_test(
     NAME parser_smoke
@@ -190,6 +203,11 @@ add_test(
 add_test(
     NAME bitbucket_client
     COMMAND confy_bitbucket_client_test
+)
+
+add_test(
+    NAME download_worker_queue
+    COMMAND confy_download_worker_queue_test
 )
 
 if(MSVC)
