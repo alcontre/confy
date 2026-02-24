@@ -946,18 +946,13 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
 void MainFrame::UpdateComboTooltip(wxComboBox& comboBox) {
     const auto value = comboBox.GetValue();
-    const auto currentTooltip = comboBox.GetToolTipText();
 
     if (value.empty()) {
-        if (!currentTooltip.empty()) {
-            comboBox.UnsetToolTip();
-        }
+        comboBox.UnsetToolTip();
         return;
     }
 
-    if (currentTooltip != value) {
-        comboBox.SetToolTip(value);
-    }
+    comboBox.SetToolTip(value);
 }
 
 void MainFrame::UpdateRowTooltips(std::size_t componentIndex) {
