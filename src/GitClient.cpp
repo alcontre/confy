@@ -38,6 +38,12 @@ void FallbackLog(const char* level, const char* format, ...) {
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <sys/wait.h>
 #endif
 
@@ -49,7 +55,8 @@ namespace {
 bool RunCommandCaptureWindows(const std::string& command,
                               std::string& output,
                               std::string& errorMessage,
-                              const confy::GitClient::CommandOutputCallback& outputCallback) {
+                              const confy::GitClient::CommandOutputCallback& outputCallback,
+                              const std::atomic<bool>* cancelRequested) {
     output.clear();
     wxLogMessage("[git-client] exec: %s", command.c_str());
 
@@ -103,6 +110,38 @@ bool RunCommandCaptureWindows(const std::string& command,
     CloseHandle(writePipe);
 
     std::array<char, 512> buffer{};
+    bool cancelled = false;
+    while (true) {
+        DWORD availableBytes = 0;
+        if (!PeekNamedPipe(readPipe, nullptr, 0, nullptr, &availableBytes, nullptr)) {
+            break;
+        }
+
+        if (availableBytes > 0) {
+            DWORD bytesRead = 0;
+            const DWORD toRead = availableBytes < static_cast<DWORD>(buffer.size())
+                                     ? availableBytes
+                                     : static_cast<DWORD>(buffer.size());
+            if (ReadFile(readPipe, buffer.data(), toRead, &bytesRead, nullptr) && bytesRead > 0) {
+                output.append(buffer.data(), bytesRead);
+                if (outputCallback) {
+                    outputCallback(std::string_view(buffer.data(), bytesRead));
+                }
+            }
+        }
+
+        const DWORD waitResult = WaitForSingleObject(processInfo.hProcess, 25);
+        if (waitResult == WAIT_OBJECT_0) {
+            continue;
+        }
+
+        if (cancelRequested != nullptr && cancelRequested->load()) {
+            cancelled = true;
+            TerminateProcess(processInfo.hProcess, 1);
+            break;
+        }
+    }
+
     DWORD bytesRead = 0;
     while (ReadFile(readPipe, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr) &&
            bytesRead > 0) {
@@ -131,6 +170,12 @@ bool RunCommandCaptureWindows(const std::string& command,
         wxLogMessage("[git-client] output:\n%s", output.c_str());
     }
 
+    if (cancelled) {
+        errorMessage = "Cancelled";
+        wxLogMessage("[git-client] command cancelled");
+        return false;
+    }
+
     if (exitCode != 0) {
         if (output.empty()) {
             errorMessage = "Command failed with exit code " + std::to_string(exitCode) + ": " + command;
@@ -141,6 +186,25 @@ bool RunCommandCaptureWindows(const std::string& command,
         return false;
     }
 
+    return true;
+}
+#endif
+
+#ifndef _WIN32
+bool TerminateProcessGroupGracefully(pid_t processGroupId) {
+    if (processGroupId <= 0) {
+        return false;
+    }
+
+    kill(-processGroupId, SIGTERM);
+    for (int i = 0; i < 20; ++i) {
+        if (kill(-processGroupId, 0) == -1 && errno == ESRCH) {
+            return true;
+        }
+        ::usleep(10000);
+    }
+
+    kill(-processGroupId, SIGKILL);
     return true;
 }
 #endif
@@ -278,22 +342,6 @@ std::string NormalizeRepositoryUrl(std::string repositoryUrl) {
     return repositoryUrl;
 }
 
-FILE* OpenCommandPipe(const char* command, const char* mode) {
-#ifdef _WIN32
-    return _popen(command, mode);
-#else
-    return popen(command, mode);
-#endif
-}
-
-int CloseCommandPipe(FILE* pipe) {
-#ifdef _WIN32
-    return _pclose(pipe);
-#else
-    return pclose(pipe);
-#endif
-}
-
 #ifdef _WIN32
 void ClearReadOnlyAttributeRecursive(const fs::path& rootPath) {
     std::error_code ec;
@@ -425,50 +473,115 @@ int GitClient::DecodeExitCode(int rawExitCode) {
 bool GitClient::RunCommandCapture(const std::string& command,
                                   std::string& output,
                                   std::string& errorMessage,
-                                  CommandOutputCallback outputCallback) {
+                                  CommandOutputCallback outputCallback,
+                                  const std::atomic<bool>* cancelRequested) {
 #ifdef _WIN32
-    return RunCommandCaptureWindows(command, output, errorMessage, outputCallback);
+    return RunCommandCaptureWindows(command, output, errorMessage, outputCallback, cancelRequested);
 #else
     output.clear();
-    std::array<char, 512> buffer{};
+    errorMessage.clear();
+    wxLogMessage("[git-client] exec: %s", command.c_str());
 
-    const std::string fullCommand = command + " 2>&1";
-    wxLogMessage("[git-client] exec: %s", fullCommand.c_str());
-    FILE* pipe = OpenCommandPipe(fullCommand.c_str(), "r");
-    if (pipe == nullptr) {
-        errorMessage = "Failed to start process: " + command;
-        wxLogError("[git-client] failed to open process pipe");
+    int outputPipe[2]{-1, -1};
+    if (pipe(outputPipe) != 0) {
+        errorMessage = "Failed to create process output pipe.";
+        wxLogError("[git-client] failed to create process output pipe");
         return false;
     }
 
-    while (true) {
-        const auto readCount = std::fread(buffer.data(), 1, buffer.size(), pipe);
-        if (readCount > 0) {
-            output.append(buffer.data(), readCount);
-            if (outputCallback) {
-                outputCallback(std::string_view(buffer.data(), readCount));
-            }
-        }
+    const pid_t childPid = fork();
+    if (childPid == -1) {
+        close(outputPipe[0]);
+        close(outputPipe[1]);
+        errorMessage = "Failed to start process: " + command;
+        wxLogError("[git-client] failed to fork process");
+        return false;
+    }
 
-        if (readCount < buffer.size()) {
-            if (std::ferror(pipe) != 0) {
-                errorMessage = "Failed to read process output: " + command;
-                CloseCommandPipe(pipe);
-                wxLogError("[git-client] failed while reading process output");
-                return false;
-            }
-            if (std::feof(pipe) != 0) {
+    if (childPid == 0) {
+        ::setpgid(0, 0);
+        ::dup2(outputPipe[1], STDOUT_FILENO);
+        ::dup2(outputPipe[1], STDERR_FILENO);
+        close(outputPipe[0]);
+        close(outputPipe[1]);
+        execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
+
+    ::setpgid(childPid, childPid);
+    close(outputPipe[1]);
+
+    const int flags = fcntl(outputPipe[0], F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(outputPipe[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    bool childExited = false;
+    bool cancelled = false;
+    int rawExit = -1;
+    std::array<char, 512> buffer{};
+    pollfd pfd{};
+    pfd.fd = outputPipe[0];
+    pfd.events = POLLIN;
+
+    while (!childExited) {
+        const int pollResult = poll(&pfd, 1, 50);
+        if (pollResult > 0 && (pfd.revents & (POLLIN | POLLHUP))) {
+            while (true) {
+                const ssize_t readCount = read(outputPipe[0], buffer.data(), buffer.size());
+                if (readCount > 0) {
+                    output.append(buffer.data(), static_cast<std::size_t>(readCount));
+                    if (outputCallback) {
+                        outputCallback(std::string_view(buffer.data(), static_cast<std::size_t>(readCount)));
+                    }
+                    continue;
+                }
+                if (readCount == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    break;
+                }
                 break;
             }
         }
+
+        if (cancelRequested != nullptr && cancelRequested->load()) {
+            cancelled = true;
+            TerminateProcessGroupGracefully(childPid);
+        }
+
+        int status = 0;
+        const pid_t waited = waitpid(childPid, &status, WNOHANG);
+        if (waited == childPid) {
+            rawExit = status;
+            childExited = true;
+        }
     }
 
-    const int rawExit = CloseCommandPipe(pipe);
+    while (true) {
+        const ssize_t readCount = read(outputPipe[0], buffer.data(), buffer.size());
+        if (readCount > 0) {
+            output.append(buffer.data(), static_cast<std::size_t>(readCount));
+            if (outputCallback) {
+                outputCallback(std::string_view(buffer.data(), static_cast<std::size_t>(readCount)));
+            }
+            continue;
+        }
+        break;
+    }
+
+    close(outputPipe[0]);
+
     const int exitCode = DecodeExitCode(rawExit);
     wxLogMessage("[git-client] exit=%d", exitCode);
     if (!output.empty()) {
         wxLogMessage("[git-client] output:\n%s", output.c_str());
     }
+
+    if (cancelled) {
+        errorMessage = "Cancelled";
+        wxLogMessage("[git-client] command cancelled");
+        return false;
+    }
+
     if (exitCode != 0) {
         if (output.empty()) {
             errorMessage = "Command failed with exit code " + std::to_string(exitCode) + ": " + command;
@@ -605,7 +718,8 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
                                      false,
                                      clonePartialLine,
                                      lastReportedPercent);
-            })) {
+            },
+            &cancelRequested)) {
         return false;
     }
     if (!clonePartialLine.empty()) {
@@ -645,7 +759,8 @@ bool GitClient::CloneRepository(const std::string& repositoryUrl,
                                      true,
                                      submodulePartialLine,
                                      lastReportedPercent);
-            })) {
+            },
+            &cancelRequested)) {
         return false;
     }
     if (!submodulePartialLine.empty()) {

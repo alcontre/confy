@@ -37,7 +37,8 @@ private:
     static bool RunCommandCapture(const std::string& command,
                                   std::string& output,
                                   std::string& errorMessage,
-                                  CommandOutputCallback outputCallback = nullptr);
+                                  CommandOutputCallback outputCallback = nullptr,
+                                  const std::atomic<bool>* cancelRequested = nullptr);
     static int DecodeExitCode(int rawExitCode);
 
     bool BuildAuthConfigArg(const std::string& repositoryUrl,
