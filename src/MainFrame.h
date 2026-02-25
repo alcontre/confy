@@ -47,6 +47,21 @@ class MainFrame final : public wxFrame
       wxComboBox *artifactBuildType{nullptr};
    };
 
+   struct ComponentRowBaseline
+   {
+      std::string sourceBranch;
+      std::string artifactVersion;
+      std::string artifactBuildType;
+   };
+
+   struct ComponentRowChangeState
+   {
+      wxPanel *modifiedIndicator{nullptr};
+      bool sourceBranchTouched{false};
+      bool artifactVersionTouched{false};
+      bool artifactBuildTypeTouched{false};
+   };
+
    void OnCloseConfig(wxCommandEvent &event);
    void OnReloadConfig(wxCommandEvent &event);
    void OnExit(wxCommandEvent &event);
@@ -69,6 +84,7 @@ class MainFrame final : public wxFrame
    void AddComponentRow(std::size_t componentIndex);
    void UpdateComboTooltip(wxComboBox &comboBox);
    void UpdateRowTooltips(std::size_t componentIndex);
+   void RefreshRowModifiedIndicator(std::size_t componentIndex);
    void RefreshRowEnabledState(std::size_t componentIndex);
    void StartMetadataWorkers();
    void StopMetadataWorkers();
@@ -100,12 +116,14 @@ class MainFrame final : public wxFrame
    };
 
    ConfigModel config_;
-   wxStaticText *statusLabel_{nullptr};
    wxScrolledWindow *componentScroll_{nullptr};
    wxPanel *componentContentPanel_{nullptr};
    wxSizer *componentListSizer_{nullptr};
    wxButton *applyButton_{nullptr};
    std::vector<ComponentRowWidgets> rows_;
+   std::vector<ComponentRowBaseline> rowBaselines_;
+   std::vector<ComponentRowChangeState> rowChangeState_;
+   std::unordered_set<const wxComboBox *> openComboDropdowns_;
    // GUI-thread state: workers never mutate these directly. Worker results are
    // marshaled back to the main event loop via CallAfter before touching them.
    std::vector<ComponentMetadataState> metadataState_;

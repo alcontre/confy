@@ -44,6 +44,7 @@ constexpr int kIdSaveAs           = wxID_HIGHEST + 6;
 constexpr int kIdCopyConfig       = wxID_HIGHEST + 7;
 constexpr int kSectionLabelWidth  = 64;
 constexpr int kFieldLabelWidth    = 72;
+const wxColour kModifiedIndicatorActiveColour(255, 140, 0);
 
 bool HasSource(const confy::ComponentConfig &component)
 {
@@ -92,10 +93,6 @@ MainFrame::MainFrame(const wxString &initialConfigPath, std::function<void()> on
    SetMenuBar(menuBar);
 
    auto *rootSizer = new wxBoxSizer(wxVERTICAL);
-
-   statusLabel_ = new wxStaticText(this, wxID_ANY, "");
-   statusLabel_->Hide();
-   rootSizer->Add(statusLabel_, 0, wxALL | wxEXPAND, 8);
 
    componentScroll_ = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
    componentScroll_->SetScrollRate(0, 6);
@@ -391,6 +388,11 @@ void MainFrame::RenderConfig()
    componentListSizer_->Clear(true);
    rows_.clear();
    rows_.reserve(config_.components.size());
+   rowBaselines_.clear();
+   rowBaselines_.resize(config_.components.size());
+   rowChangeState_.clear();
+   rowChangeState_.resize(config_.components.size());
+   openComboDropdowns_.clear();
    metadataState_.clear();
    metadataState_.resize(config_.components.size());
    componentSourceRequests_.clear();
@@ -410,8 +412,6 @@ void MainFrame::RenderConfig()
    RelayoutComponentArea();
    uiUpdating_ = false;
 
-   statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
-   statusLabel_->Show();
    if (loadedConfigPath_.empty()) {
       SetStatusText("Config: none");
    } else {
@@ -443,6 +443,12 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
 
    auto *detailsSizer = new wxBoxSizer(wxVERTICAL);
 
+   auto *componentCardSizer = new wxBoxSizer(wxHORIZONTAL);
+   auto *modifiedIndicator  = new wxPanel(componentContentPanel_, wxID_ANY, wxDefaultPosition, wxSize(6, -1));
+   modifiedIndicator->SetMinSize(wxSize(6, -1));
+   modifiedIndicator->SetBackgroundColour(componentContentPanel_->GetBackgroundColour());
+   componentCardSizer->Add(modifiedIndicator, 0, wxEXPAND | wxRIGHT, 6);
+
    auto makeFixedLabel = [rowParent](const wxString &text, int width) {
       auto *label = new wxStaticText(rowParent, wxID_ANY, text);
       label->SetMinSize(wxSize(width, -1));
@@ -473,7 +479,9 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
    detailsSizer->Add(artifactRow, 0, wxEXPAND);
 
    rowBox->Add(detailsSizer, 1, wxEXPAND);
-   componentListSizer_->Add(rowBox, 0, wxBOTTOM | wxEXPAND, 6);
+   componentCardSizer->Add(rowBox, 1, wxEXPAND);
+
+   componentListSizer_->Add(componentCardSizer, 0, wxBOTTOM | wxEXPAND, 6);
 
    ComponentRowWidgets row;
    row.sourceEnabled     = sourceEnabled;
@@ -483,6 +491,42 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
    row.artifactVersion   = artifactVersion;
    row.artifactBuildType = artifactBuildType;
    rows_.push_back(row);
+
+   rowBaselines_[componentIndex].sourceBranch     = component.source.branchOrTag;
+   rowBaselines_[componentIndex].artifactVersion  = component.artifact.version;
+   rowBaselines_[componentIndex].artifactBuildType = component.artifact.buildType;
+   rowChangeState_[componentIndex].modifiedIndicator = modifiedIndicator;
+
+   auto bindComboWheelProtection = [this](wxComboBox *combo) {
+      combo->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, combo](wxCommandEvent &) { openComboDropdowns_.insert(combo); });
+      combo->Bind(wxEVT_COMBOBOX_CLOSEUP, [this, combo](wxCommandEvent &) { openComboDropdowns_.erase(combo); });
+      combo->Bind(wxEVT_MOUSEWHEEL, [this, combo](wxMouseEvent &event) {
+         if (openComboDropdowns_.find(combo) != openComboDropdowns_.end()) {
+            event.Skip();
+            return;
+         }
+
+         if (componentScroll_) {
+            int wheelDelta = event.GetWheelDelta();
+            if (wheelDelta == 0) {
+               wheelDelta = 120;
+            }
+            int wheelSteps = event.GetWheelRotation() / wheelDelta;
+            if (wheelSteps == 0) {
+               wheelSteps = (event.GetWheelRotation() > 0) ? 1 : -1;
+            }
+            int linesPerAction = event.GetLinesPerAction();
+            if (linesPerAction <= 0) {
+               linesPerAction = 3;
+            }
+            componentScroll_->ScrollLines(-wheelSteps * linesPerAction);
+         }
+      });
+   };
+
+   bindComboWheelProtection(row.sourceBranch);
+   bindComboWheelProtection(row.artifactVersion);
+   bindComboWheelProtection(row.artifactBuildType);
 
    if (!component.source.branchOrTag.empty()) {
       row.sourceBranch->Append(component.source.branchOrTag);
@@ -529,8 +573,20 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       if (uiUpdating_) {
          return;
       }
+      rowChangeState_[componentIndex].sourceBranchTouched = true;
       config_.components[componentIndex].source.branchOrTag =
           rows_[componentIndex].sourceBranch->GetValue().ToStdString();
+      RefreshRowModifiedIndicator(componentIndex);
+   });
+   row.sourceBranch->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent &) {
+      UpdateComboTooltip(*rows_[componentIndex].sourceBranch);
+      if (uiUpdating_) {
+         return;
+      }
+      rowChangeState_[componentIndex].sourceBranchTouched = true;
+      config_.components[componentIndex].source.branchOrTag =
+          rows_[componentIndex].sourceBranch->GetValue().ToStdString();
+      RefreshRowModifiedIndicator(componentIndex);
    });
    row.sourceBranch->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, componentIndex](wxCommandEvent &) {
       if (uiUpdating_) {
@@ -544,16 +600,20 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       if (uiUpdating_) {
          return;
       }
+      rowChangeState_[componentIndex].artifactVersionTouched = true;
       config_.components[componentIndex].artifact.version =
           rows_[componentIndex].artifactVersion->GetValue().ToStdString();
+      RefreshRowModifiedIndicator(componentIndex);
    });
    row.artifactVersion->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent &) {
       UpdateComboTooltip(*rows_[componentIndex].artifactVersion);
       if (uiUpdating_) {
          return;
       }
+      rowChangeState_[componentIndex].artifactVersionTouched = true;
       const auto version                                  = rows_[componentIndex].artifactVersion->GetValue().ToStdString();
       config_.components[componentIndex].artifact.version = version;
+      RefreshRowModifiedIndicator(componentIndex);
       EnqueueBuildTypeFetch(componentIndex, version);
    });
    row.artifactVersion->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, componentIndex](wxCommandEvent &) {
@@ -568,10 +628,23 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       if (uiUpdating_) {
          return;
       }
+      rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
       config_.components[componentIndex].artifact.buildType =
           rows_[componentIndex].artifactBuildType->GetValue().ToStdString();
+      RefreshRowModifiedIndicator(componentIndex);
+   });
+   row.artifactBuildType->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent &) {
+      UpdateComboTooltip(*rows_[componentIndex].artifactBuildType);
+      if (uiUpdating_) {
+         return;
+      }
+      rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
+      config_.components[componentIndex].artifact.buildType =
+          rows_[componentIndex].artifactBuildType->GetValue().ToStdString();
+      RefreshRowModifiedIndicator(componentIndex);
    });
 
+   RefreshRowModifiedIndicator(componentIndex);
    RefreshRowEnabledState(componentIndex);
 }
 
@@ -596,6 +669,41 @@ void MainFrame::UpdateRowTooltips(std::size_t componentIndex)
    UpdateComboTooltip(*row.sourceBranch);
    UpdateComboTooltip(*row.artifactVersion);
    UpdateComboTooltip(*row.artifactBuildType);
+}
+
+void MainFrame::RefreshRowModifiedIndicator(std::size_t componentIndex)
+{
+   if (componentIndex >= config_.components.size() || componentIndex >= rowBaselines_.size() ||
+       componentIndex >= rowChangeState_.size()) {
+      return;
+   }
+
+   const auto &component = config_.components[componentIndex];
+   const auto &baseline  = rowBaselines_[componentIndex];
+   auto &state           = rowChangeState_[componentIndex];
+
+   const bool sourceModified =
+       state.sourceBranchTouched && component.source.branchOrTag != baseline.sourceBranch;
+   const bool versionModified =
+       state.artifactVersionTouched && component.artifact.version != baseline.artifactVersion;
+   const bool buildTypeModified =
+       state.artifactBuildTypeTouched && component.artifact.buildType != baseline.artifactBuildType;
+
+   const bool isModified = sourceModified || versionModified || buildTypeModified;
+
+   if (!state.modifiedIndicator) {
+      return;
+   }
+
+   const auto inactiveColour = componentContentPanel_ ? componentContentPanel_->GetBackgroundColour() : wxNullColour;
+   state.modifiedIndicator->SetBackgroundColour(isModified ? kModifiedIndicatorActiveColour : inactiveColour);
+   state.modifiedIndicator->Refresh();
+
+   if (isModified) {
+      state.modifiedIndicator->SetToolTip("Modified from XML");
+   } else {
+      state.modifiedIndicator->UnsetToolTip();
+   }
 }
 
 void MainFrame::RefreshRowEnabledState(std::size_t componentIndex)
@@ -922,9 +1030,6 @@ void MainFrame::MetadataWorkerLoop()
             }
             if (!previousSelection.empty()) {
                sourceBranch->SetValue(previousSelection);
-            } else if (!refs.empty()) {
-               sourceBranch->SetValue(refs.front());
-               config_.components[index].source.branchOrTag = refs.front();
             }
             uiUpdating_ = false;
             UpdateComboTooltip(*sourceBranch);
@@ -960,9 +1065,6 @@ void MainFrame::MetadataWorkerLoop()
             }
             if (!previousSelection.empty()) {
                versionBox->SetValue(previousSelection);
-            } else if (!versions.empty()) {
-               versionBox->SetValue(versions.front());
-               config_.components[index].artifact.version = versions.front();
             }
             uiUpdating_ = false;
             UpdateComboTooltip(*versionBox);
@@ -1008,9 +1110,6 @@ void MainFrame::MetadataWorkerLoop()
          }
          if (!previousSelection.empty()) {
             buildTypeBox->SetValue(previousSelection);
-         } else if (!buildTypes.empty()) {
-            buildTypeBox->SetValue(buildTypes.front());
-            config_.components[index].artifact.buildType = buildTypes.front();
          }
          uiUpdating_ = false;
          UpdateComboTooltip(*buildTypeBox);
