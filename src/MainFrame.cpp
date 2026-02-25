@@ -398,6 +398,9 @@ void MainFrame::RenderConfig()
    componentArtifactRequests_.clear();
    componentArtifactRequests_.resize(config_.components.size());
 
+   // Build per-component request snapshots consumed by worker threads. These
+   // vectors are refreshed as a batch for the current config view and are not
+   // mutated again until workers are stopped and the next RenderConfig() runs.
    for (std::size_t i = 0; i < config_.components.size(); ++i) {
       componentSourceRequests_[i]   = config_.components[i].source.url;
       componentArtifactRequests_[i] = {config_.components[i].artifact.url, config_.components[i].name};
@@ -636,6 +639,11 @@ void MainFrame::EnqueueSourceRefsFetch(std::size_t componentIndex, bool prioriti
    task.componentIndex = componentIndex;
    const auto key      = "s:" + std::to_string(componentIndex);
 
+   // Queue semantics:
+   // - At most one queued source-ref task per component key.
+   // - Prioritized requests move the existing queued task to the front.
+   // - Deduplication applies to queued tasks; once dequeued, a new request can
+   //   be queued even if an older one is still in-flight.
    {
       std::scoped_lock lock(metadataMutex_);
       if (metadataTaskKeys_.find(key) != metadataTaskKeys_.end()) {
@@ -667,6 +675,8 @@ void MainFrame::StartMetadataWorkers()
    if (!metadataWorkers_.empty()) {
       return;
    }
+   // Two background workers process metadata in parallel. UI work remains on
+   // the main thread and is posted via CallAfter from worker code.
    stopMetadataWorkers_ = false;
    metadataWorkers_.emplace_back(&MainFrame::MetadataWorkerLoop, this);
    metadataWorkers_.emplace_back(&MainFrame::MetadataWorkerLoop, this);
@@ -676,6 +686,9 @@ void MainFrame::StopMetadataWorkers()
 {
    {
       std::scoped_lock lock(metadataMutex_);
+      // Shutdown contract: stop accepting/processing queued metadata work,
+      // clear pending tasks, then join workers so no background thread remains
+      // active before config/UI state is rebuilt.
       stopMetadataWorkers_ = true;
       metadataTasks_.clear();
       metadataTaskKeys_.clear();
@@ -706,6 +719,8 @@ void MainFrame::EnqueueVersionFetch(std::size_t componentIndex, bool prioritize)
    task.componentIndex = componentIndex;
    const auto key      = "v:" + std::to_string(componentIndex);
 
+   // Same queueing contract as source refs: dedupe by key while queued and
+   // optional promotion to the front when the user explicitly prioritizes.
    {
       std::scoped_lock lock(metadataMutex_);
       if (metadataTaskKeys_.find(key) != metadataTaskKeys_.end()) {
@@ -750,6 +765,7 @@ void MainFrame::EnqueueBuildTypeFetch(std::size_t componentIndex, const std::str
    task.componentIndex = componentIndex;
    task.version        = version;
    const auto key      = "b:" + std::to_string(componentIndex) + ":" + version;
+   // Build-type tasks are version-scoped and deduped per component+version key.
    {
       std::scoped_lock lock(metadataMutex_);
       if (metadataTaskKeys_.find(key) != metadataTaskKeys_.end()) {
@@ -788,6 +804,8 @@ void MainFrame::MetadataWorkerLoop()
          if (stopMetadataWorkers_) {
             return;
          }
+         // Copy one task out while holding the lock, then release the lock and
+         // perform network/auth work without blocking other workers/queue ops.
          task = metadataTasks_.front();
          metadataTasks_.pop_front();
          if (task.type == MetadataTaskType::SourceRefs) {
@@ -818,6 +836,8 @@ void MainFrame::MetadataWorkerLoop()
       }
 
       if (task.type == MetadataTaskType::SourceRefs) {
+         // Workers never update wx widgets or GUI-owned metadata state directly.
+         // CallAfter marshals updates onto the main GUI event loop.
          CallAfter([this, index = task.componentIndex]() {
             if (index < metadataState_.size()) {
                metadataState_[index].sourceRefsLoading = true;
@@ -878,6 +898,8 @@ void MainFrame::MetadataWorkerLoop()
          std::string errorMessage;
          GitClient client(std::move(credentials));
          const auto ok = client.ListBranchesAndTags(componentSourceRequests_[task.componentIndex], refs, errorMessage);
+         // Move fetched data into the posted callback so the worker thread can
+         // continue and UI mutation happens only on the event loop thread.
          CallAfter([this, index = task.componentIndex, refs = std::move(refs), ok]() mutable {
             if (index >= metadataState_.size() || index >= rows_.size() || index >= config_.components.size()) {
                return;
@@ -916,6 +938,7 @@ void MainFrame::MetadataWorkerLoop()
          std::vector<std::string> versions;
          const auto ok = client.ListComponentVersions(
              request.first, request.second, versions, errorMessage);
+         // Result ownership is transferred to the GUI callback by move-capture.
          CallAfter([this, index = task.componentIndex, versions = std::move(versions), ok]() mutable {
             if (index >= metadataState_.size() || index >= rows_.size() || index >= config_.components.size()) {
                return;
@@ -954,6 +977,8 @@ void MainFrame::MetadataWorkerLoop()
       std::vector<std::string> buildTypes;
       const auto ok = client.ListBuildTypes(
           request.first, request.second, task.version, buildTypes, errorMessage);
+      // Version and payload are copied/moved into the callback to decouple UI
+      // application from worker lifetime and stack storage.
       CallAfter([this,
                     index      = task.componentIndex,
                     version    = task.version,

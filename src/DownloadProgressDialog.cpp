@@ -82,13 +82,14 @@ wxString BuildProgressStatus(wxStaticText *label,
 
 namespace confy {
 
-DownloadProgressDialog::DownloadProgressDialog(wxWindow *parent, std::vector<DownloadJob> jobs) : wxDialog(parent,
-                                                                                                      wxID_ANY,
-                                                                                                      "Download Progress",
-                                                                                                      wxDefaultPosition,
-                                                                                                      wxSize(760, 420),
-                                                                                                      wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
-                                                                                                  jobs_(std::move(jobs))
+DownloadProgressDialog::DownloadProgressDialog(wxWindow *parent, std::vector<DownloadJob> jobs) :
+    wxDialog(parent,
+        wxID_ANY,
+        "Download Progress",
+        wxDefaultPosition,
+        wxSize(760, 420),
+        wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
+    jobs_(std::move(jobs))
 {
    auto *rootSizer = new wxBoxSizer(wxVERTICAL);
 

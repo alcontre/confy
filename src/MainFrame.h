@@ -106,12 +106,22 @@ class MainFrame final : public wxFrame
    wxSizer *componentListSizer_{nullptr};
    wxButton *applyButton_{nullptr};
    std::vector<ComponentRowWidgets> rows_;
+   // GUI-thread state: workers never mutate these directly. Worker results are
+   // marshaled back to the main event loop via CallAfter before touching them.
    std::vector<ComponentMetadataState> metadataState_;
+
+   // Per-render request snapshots indexed by component. Workers read from these
+   // after dequeuing a task; RenderConfig rebuilds them only between
+   // StopMetadataWorkers()/StartMetadataWorkers() boundaries.
    std::vector<std::string> componentSourceRequests_;
    std::vector<std::pair<std::string, std::string>> componentArtifactRequests_;
    std::string loadedConfigPath_;
    bool uiUpdating_{false};
 
+   // Cross-thread coordination for metadata workers:
+   // - metadataTasks_/metadataTaskKeys_/stopMetadataWorkers_ are protected by metadataMutex_.
+   // - metadataTaskKeys_ deduplicates queued work (not currently executing work).
+   // - metadataCv_ wakes worker threads when new tasks arrive or shutdown begins.
    std::mutex metadataMutex_;
    std::condition_variable metadataCv_;
    std::deque<MetadataTask> metadataTasks_;
