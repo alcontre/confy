@@ -27,10 +27,6 @@ Large projects often consist of many repositories and binary artifacts that need
 
 ## Getting started
 
-### Download a release
-
-Pre-built binaries are available on the [Releases](../../releases) page. Download the archive for your platform, extract it, and run `confy` (or `confy.exe` on Windows).
-
 ### Build from source
 
 ```bash
