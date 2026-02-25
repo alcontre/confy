@@ -1,0 +1,12 @@
+UseTab: false
+IndentWidth: 3
+BreakBeforeBraces: Mozilla
+BreakConstructorInitializers: AfterColon
+AlignAfterOpenBracket: DontAlign
+AlwaysBreakTemplateDeclarations: true
+AlignConsecutiveAssignments: true
+AlignConsecutiveMacros: true
+IndentCaseLabels: true
+IndentPPDirectives: None
+ColumnLimit: 0
+IncludeBlocks: Preserve
