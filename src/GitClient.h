@@ -10,42 +10,43 @@
 
 namespace confy {
 
-class GitClient final {
-public:
-    using ProgressCallback = std::function<void(int percent, const std::string& message)>;
-    using CommandOutputCallback = std::function<void(std::string_view)>;
+class GitClient final
+{
+ public:
+   using ProgressCallback      = std::function<void(int percent, const std::string &message)>;
+   using CommandOutputCallback = std::function<void(std::string_view)>;
 
-    explicit GitClient(AuthCredentials credentials);
+   explicit GitClient(AuthCredentials credentials);
 
-    bool ListBranchesAndTags(const std::string& repositoryUrl,
-                             std::vector<std::string>& outRefs,
-                             std::string& errorMessage) const;
+   bool ListBranchesAndTags(const std::string &repositoryUrl,
+       std::vector<std::string> &outRefs,
+       std::string &errorMessage) const;
 
-    bool CloneRepository(const std::string& repositoryUrl,
-                         const std::string& branchOrTag,
-                         const std::string& targetDirectory,
-                         bool shallow,
-                         std::atomic<bool>& cancelRequested,
-                         ProgressCallback progress,
-                         std::string& errorMessage) const;
+   bool CloneRepository(const std::string &repositoryUrl,
+       const std::string &branchOrTag,
+       const std::string &targetDirectory,
+       bool shallow,
+       std::atomic<bool> &cancelRequested,
+       ProgressCallback progress,
+       std::string &errorMessage) const;
 
-    static bool ExtractHostPort(const std::string& repositoryUrl, std::string& outHostPort);
-    static std::vector<std::string> ParseLsRemoteRefs(const std::string& lsRemoteOutput);
+   static bool ExtractHostPort(const std::string &repositoryUrl, std::string &outHostPort);
+   static std::vector<std::string> ParseLsRemoteRefs(const std::string &lsRemoteOutput);
 
-private:
-    static std::string EscapeShellArg(const std::string& value);
-    static bool RunCommandCapture(const std::string& command,
-                                  std::string& output,
-                                  std::string& errorMessage,
-                                  CommandOutputCallback outputCallback = nullptr,
-                                  const std::atomic<bool>* cancelRequested = nullptr);
-    static int DecodeExitCode(int rawExitCode);
+ private:
+   static std::string EscapeShellArg(const std::string &value);
+   static bool RunCommandCapture(const std::string &command,
+       std::string &output,
+       std::string &errorMessage,
+       CommandOutputCallback outputCallback     = nullptr,
+       const std::atomic<bool> *cancelRequested = nullptr);
+   static int DecodeExitCode(int rawExitCode);
 
-    bool BuildAuthConfigArg(const std::string& repositoryUrl,
-                            std::string& outConfigArg,
-                            std::string& errorMessage) const;
+   bool BuildAuthConfigArg(const std::string &repositoryUrl,
+       std::string &outConfigArg,
+       std::string &errorMessage) const;
 
-    AuthCredentials credentials_;
+   AuthCredentials credentials_;
 };
 
-}  // namespace confy
+} // namespace confy

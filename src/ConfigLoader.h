@@ -6,15 +6,17 @@
 
 namespace confy {
 
-struct LoadResult {
-    bool success{false};
-    std::string errorMessage;
-    ConfigModel config;
+struct LoadResult
+{
+   bool success{false};
+   std::string errorMessage;
+   ConfigModel config;
 };
 
-class ConfigLoader final {
-public:
-    LoadResult LoadFromFile(const std::string& filePath) const;
+class ConfigLoader final
+{
+ public:
+   LoadResult LoadFromFile(const std::string &filePath) const;
 };
 
-}  // namespace confy
+} // namespace confy

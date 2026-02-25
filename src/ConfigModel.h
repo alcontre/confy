@@ -5,36 +5,40 @@
 
 namespace confy {
 
-struct SourceConfig {
-    bool enabled{false};
-    std::string url;
-    std::string branchOrTag;
-    bool shallow{true};
-    std::string script;
+struct SourceConfig
+{
+   bool enabled{false};
+   std::string url;
+   std::string branchOrTag;
+   bool shallow{true};
+   std::string script;
 };
 
-struct ArtifactConfig {
-    bool enabled{false};
-    std::string url;
-    std::string version;
-    std::string buildType;
-    std::string script;
-    std::vector<std::string> regexIncludes;
-    std::vector<std::string> regexExcludes;
+struct ArtifactConfig
+{
+   bool enabled{false};
+   std::string url;
+   std::string version;
+   std::string buildType;
+   std::string script;
+   std::vector<std::string> regexIncludes;
+   std::vector<std::string> regexExcludes;
 };
 
-struct ComponentConfig {
-    std::string name;
-    std::string displayName;
-    std::string path;
-    SourceConfig source;
-    ArtifactConfig artifact;
+struct ComponentConfig
+{
+   std::string name;
+   std::string displayName;
+   std::string path;
+   SourceConfig source;
+   ArtifactConfig artifact;
 };
 
-struct ConfigModel {
-    int version{0};
-    std::string rootPath;
-    std::vector<ComponentConfig> components;
+struct ConfigModel
+{
+   int version{0};
+   std::string rootPath;
+   std::vector<ComponentConfig> components;
 };
 
-}  // namespace confy
+} // namespace confy

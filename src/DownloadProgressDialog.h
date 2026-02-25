@@ -18,57 +18,60 @@ class wxTimerEvent;
 
 namespace confy {
 
-class DownloadProgressDialog final : public wxDialog {
-public:
-    DownloadProgressDialog(wxWindow* parent, std::vector<DownloadJob> jobs);
-    ~DownloadProgressDialog() override;
+class DownloadProgressDialog final : public wxDialog
+{
+ public:
+   DownloadProgressDialog(wxWindow *parent, std::vector<DownloadJob> jobs);
+   ~DownloadProgressDialog() override;
 
-private:
-    enum class RowState {
-        Queued,
-        Running,
-        Completed,
-        Failed,
-        Cancelled,
-    };
+ private:
+   enum class RowState
+   {
+      Queued,
+      Running,
+      Completed,
+      Failed,
+      Cancelled,
+   };
 
-    struct ProgressRow {
-        wxWindow* container{nullptr};
-        wxStaticText* nameLabel{nullptr};
-        wxGauge* gauge{nullptr};
-        wxStaticText* statusLabel{nullptr};
-        wxStaticText* detailLabel{nullptr};
-        wxButton* retryButton{nullptr};
-        RowState state{RowState::Queued};
-    };
+   struct ProgressRow
+   {
+      wxWindow *container{nullptr};
+      wxStaticText *nameLabel{nullptr};
+      wxGauge *gauge{nullptr};
+      wxStaticText *statusLabel{nullptr};
+      wxStaticText *detailLabel{nullptr};
+      wxButton *retryButton{nullptr};
+      RowState state{RowState::Queued};
+   };
 
-    void OnTimer(wxTimerEvent& event);
-    void OnCancel(wxCommandEvent& event);
-    void OnRetryFailed(wxCommandEvent& event);
-    void OnClose(wxCloseEvent& event);
-    void OnRetryJob(std::uint64_t jobId);
-    void ConsumeWorkerEvents();
-    void SetRowState(std::uint64_t jobId,
-                     RowState state,
-                     const wxString& status,
-                     int percent,
-                     bool isProgressUpdate = false,
-                     std::uint64_t downloadedBytes = 0,
-                     const wxString& detail = wxString());
-    void QueueRetry(std::uint64_t jobId);
-    void UpdateDialogControls();
-    bool HasActiveJobs() const;
-    bool HasFailedJobs() const;
+   void OnTimer(wxTimerEvent &event);
+   void OnCancel(wxCommandEvent &event);
+   void OnRetryFailed(wxCommandEvent &event);
+   void OnClose(wxCloseEvent &event);
+   void OnRetryJob(std::uint64_t jobId);
+   void ConsumeWorkerEvents();
+   void SetRowState(std::uint64_t jobId,
+       RowState state,
+       const wxString &status,
+       int percent,
+       bool isProgressUpdate         = false,
+       std::uint64_t downloadedBytes = 0,
+       const wxString &detail        = wxString());
+   void QueueRetry(std::uint64_t jobId);
+   void UpdateDialogControls();
+   bool HasActiveJobs() const;
+   bool HasFailedJobs() const;
 
-    std::vector<DownloadJob> jobs_;
-    std::vector<ProgressRow> rows_;
-    std::unordered_map<std::uint64_t, std::size_t> rowIndexByJobId_;
+   std::vector<DownloadJob> jobs_;
+   std::vector<ProgressRow> rows_;
+   std::unordered_map<std::uint64_t, std::size_t> rowIndexByJobId_;
 
-    DownloadWorkerQueue worker_{6};
-    wxTimer* timer_{nullptr};
-    wxButton* cancelButton_{nullptr};
-    wxButton* retryFailedButton_{nullptr};
-    bool cancelRequested_{false};
+   DownloadWorkerQueue worker_{6};
+   wxTimer *timer_{nullptr};
+   wxButton *cancelButton_{nullptr};
+   wxButton *retryFailedButton_{nullptr};
+   bool cancelRequested_{false};
 };
 
-}  // namespace confy
+} // namespace confy

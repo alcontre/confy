@@ -6,7 +6,7 @@ namespace confy {
 
 void InitializeDebugLogging();
 void ShutdownDebugLogging();
-void ToggleDebugConsole(wxWindow* parent);
+void ToggleDebugConsole(wxWindow *parent);
 bool IsDebugConsoleVisible();
 
-}  // namespace confy
+} // namespace confy

@@ -6,13 +6,14 @@
 
 namespace confy {
 
-struct SaveConfigResult {
-    bool success{false};
-    std::string errorMessage;
+struct SaveConfigResult
+{
+   bool success{false};
+   std::string errorMessage;
 };
 
-SaveConfigResult SaveConfigToFile(const ConfigModel& config, const std::string& filePath);
+SaveConfigResult SaveConfigToFile(const ConfigModel &config, const std::string &filePath);
 
-std::string BuildHumanReadableConfigSummary(const ConfigModel& config);
+std::string BuildHumanReadableConfigSummary(const ConfigModel &config);
 
-}  // namespace confy
+} // namespace confy

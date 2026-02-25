@@ -3,8 +3,8 @@
 #include <curl/curl.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cctype>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <filesystem>
@@ -24,900 +24,929 @@
 #ifndef CONFY_HAS_WX_LOG
 namespace {
 
-void FallbackLog(const char* level, const char* format, ...) {
-    std::fprintf(stderr, "[nexus][%s] ", level);
+void FallbackLog(const char *level, const char *format, ...)
+{
+   std::fprintf(stderr, "[nexus][%s] ", level);
 
-    va_list args;
-    va_start(args, format);
-    std::vfprintf(stderr, format, args);
-    va_end(args);
+   va_list args;
+   va_start(args, format);
+   std::vfprintf(stderr, format, args);
+   va_end(args);
 
-    std::fprintf(stderr, "\n");
+   std::fprintf(stderr, "\n");
 }
 
-}  // namespace
+} // namespace
 
 #define wxLogMessage(...) FallbackLog("INFO", __VA_ARGS__)
 #define wxLogWarning(...) FallbackLog("WARN", __VA_ARGS__)
-#define wxLogError(...) FallbackLog("ERROR", __VA_ARGS__)
+#define wxLogError(...)   FallbackLog("ERROR", __VA_ARGS__)
 #endif
 
 namespace fs = std::filesystem;
 
 namespace {
 
-bool ResetDirectoryWithRetries(const fs::path& targetDirectory,
-                               std::string& errorMessage,
-                               std::size_t maxAttempts = 3) {
-    for (std::size_t attempt = 1; attempt <= maxAttempts; ++attempt) {
-        std::error_code removeError;
-        fs::remove_all(targetDirectory, removeError);
-        if (removeError) {
-            if (attempt == maxAttempts) {
-                errorMessage = "Failed to clear target directory '" + targetDirectory.string() +
-                               "': " + removeError.message();
-                return false;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            continue;
-        }
-
-        std::error_code createError;
-        fs::create_directories(targetDirectory, createError);
-        if (!createError) {
-            return true;
-        }
-
-        if (attempt == maxAttempts) {
-            errorMessage = "Failed to create target directory '" + targetDirectory.string() +
-                           "': " + createError.message();
+bool ResetDirectoryWithRetries(const fs::path &targetDirectory,
+    std::string &errorMessage,
+    std::size_t maxAttempts = 3)
+{
+   for (std::size_t attempt = 1; attempt <= maxAttempts; ++attempt) {
+      std::error_code removeError;
+      fs::remove_all(targetDirectory, removeError);
+      if (removeError) {
+         if (attempt == maxAttempts) {
+            errorMessage = "Failed to clear target directory '" + targetDirectory.string() +
+                           "': " + removeError.message();
             return false;
-        }
+         }
+         std::this_thread::sleep_for(std::chrono::milliseconds(200));
+         continue;
+      }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
+      std::error_code createError;
+      fs::create_directories(targetDirectory, createError);
+      if (!createError) {
+         return true;
+      }
 
-    errorMessage = "Failed to prepare target directory '" + targetDirectory.string() + "'.";
-    return false;
+      if (attempt == maxAttempts) {
+         errorMessage = "Failed to create target directory '" + targetDirectory.string() +
+                        "': " + createError.message();
+         return false;
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+   }
+
+   errorMessage = "Failed to prepare target directory '" + targetDirectory.string() + "'.";
+   return false;
 }
 
-size_t WriteToString(void* contents, size_t size, size_t nmemb, void* userp) {
-    const size_t total = size * nmemb;
-    auto* out = static_cast<std::string*>(userp);
-    out->append(static_cast<const char*>(contents), total);
-    return total;
+size_t WriteToString(void *contents, size_t size, size_t nmemb, void *userp)
+{
+   const size_t total = size * nmemb;
+   auto *out          = static_cast<std::string *>(userp);
+   out->append(static_cast<const char *>(contents), total);
+   return total;
 }
 
-size_t WriteToFile(void* contents, size_t size, size_t nmemb, void* userp) {
-    const size_t total = size * nmemb;
-    auto* out = static_cast<std::ofstream*>(userp);
-    out->write(static_cast<const char*>(contents), static_cast<std::streamsize>(total));
-    return total;
+size_t WriteToFile(void *contents, size_t size, size_t nmemb, void *userp)
+{
+   const size_t total = size * nmemb;
+   auto *out          = static_cast<std::ofstream *>(userp);
+   out->write(static_cast<const char *>(contents), static_cast<std::streamsize>(total));
+   return total;
 }
 
-struct DownloadProgressContext {
-    std::function<void(std::uint64_t, std::uint64_t)> callback;
-    std::atomic<bool>* cancelRequested{nullptr};
+struct DownloadProgressContext
+{
+   std::function<void(std::uint64_t, std::uint64_t)> callback;
+   std::atomic<bool> *cancelRequested{nullptr};
 
-    bool initialized{false};
-    std::chrono::steady_clock::time_point lastReportedAt{};
+   bool initialized{false};
+   std::chrono::steady_clock::time_point lastReportedAt{};
 };
 
-int OnDownloadProgress(void* clientp,
-                       curl_off_t dltotal,
-                       curl_off_t dlnow,
-                       curl_off_t /*ultotal*/,
-                       curl_off_t /*ulnow*/) {
-    auto* ctx = static_cast<DownloadProgressContext*>(clientp);
-    if (ctx == nullptr) {
-        return 0;
-    }
+int OnDownloadProgress(void *clientp,
+    curl_off_t dltotal,
+    curl_off_t dlnow,
+    curl_off_t /*ultotal*/,
+    curl_off_t /*ulnow*/)
+{
+   auto *ctx = static_cast<DownloadProgressContext *>(clientp);
+   if (ctx == nullptr) {
+      return 0;
+   }
 
-    if (ctx->cancelRequested != nullptr && ctx->cancelRequested->load()) {
-        return 1;
-    }
+   if (ctx->cancelRequested != nullptr && ctx->cancelRequested->load()) {
+      return 1;
+   }
 
-    if (!ctx->callback) {
-        return 0;
-    }
+   if (!ctx->callback) {
+      return 0;
+   }
 
-    const auto safeTotal = dltotal > 0 ? static_cast<std::uint64_t>(dltotal) : 0U;
-    const auto safeNow = dlnow > 0 ? static_cast<std::uint64_t>(dlnow) : 0U;
+   const auto safeTotal = dltotal > 0 ? static_cast<std::uint64_t>(dltotal) : 0U;
+   const auto safeNow   = dlnow > 0 ? static_cast<std::uint64_t>(dlnow) : 0U;
 
-    // Rate limit the context callback to avoid overwhelming the UI with
-    // progress updates, but ensure we report at least once at the end
-    const auto now = std::chrono::steady_clock::now();
-    if (!ctx->initialized) {
-        ctx->initialized = true;
-        ctx->lastReportedAt = now;
-        ctx->callback(safeNow, safeTotal);
-        return 0;
-    }
+   // Rate limit the context callback to avoid overwhelming the UI with
+   // progress updates, but ensure we report at least once at the end
+   const auto now = std::chrono::steady_clock::now();
+   if (!ctx->initialized) {
+      ctx->initialized    = true;
+      ctx->lastReportedAt = now;
+      ctx->callback(safeNow, safeTotal);
+      return 0;
+   }
 
-    constexpr auto kMinInterval = std::chrono::milliseconds(250);
-    const bool reachedEnd = safeTotal > 0 && safeNow >= safeTotal;
-    const bool intervalElapsed = (now - ctx->lastReportedAt) >= kMinInterval;
+   constexpr auto kMinInterval = std::chrono::milliseconds(250);
+   const bool reachedEnd       = safeTotal > 0 && safeNow >= safeTotal;
+   const bool intervalElapsed  = (now - ctx->lastReportedAt) >= kMinInterval;
 
-    if (reachedEnd || intervalElapsed) {
-        ctx->lastReportedAt = now;
-        ctx->callback(safeNow, safeTotal);
-    }
+   if (reachedEnd || intervalElapsed) {
+      ctx->lastReportedAt = now;
+      ctx->callback(safeNow, safeTotal);
+   }
 
-    return 0;
+   return 0;
 }
 
-std::string UrlEncode(const std::string& value) {
-    std::string out;
-    out.reserve(value.size());
-    for (unsigned char c : value) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
-            c == '_' || c == '.' || c == '~') {
-            out.push_back(static_cast<char>(c));
-        } else {
-            constexpr char kHex[] = "0123456789ABCDEF";
-            out.push_back('%');
-            out.push_back(kHex[(c >> 4) & 0x0F]);
-            out.push_back(kHex[c & 0x0F]);
-        }
-    }
-    return out;
+std::string UrlEncode(const std::string &value)
+{
+   std::string out;
+   out.reserve(value.size());
+   for (unsigned char c : value) {
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
+          c == '_' || c == '.' || c == '~') {
+         out.push_back(static_cast<char>(c));
+      } else {
+         constexpr char kHex[] = "0123456789ABCDEF";
+         out.push_back('%');
+         out.push_back(kHex[(c >> 4) & 0x0F]);
+         out.push_back(kHex[c & 0x0F]);
+      }
+   }
+   return out;
 }
 
-std::string TrimTrailingSlash(std::string value) {
-    while (!value.empty() && value.back() == '/') {
-        value.pop_back();
-    }
-    return value;
+std::string TrimTrailingSlash(std::string value)
+{
+   while (!value.empty() && value.back() == '/') {
+      value.pop_back();
+   }
+   return value;
 }
 
-std::string ExtractHostPort(const std::string& baseUrl) {
-    auto pos = baseUrl.find("://");
-    if (pos == std::string::npos) {
-        return {};
-    }
-    auto hostStart = pos + 3;
-    auto slash = baseUrl.find('/', hostStart);
-    if (slash == std::string::npos) {
-        return baseUrl.substr(hostStart);
-    }
-    return baseUrl.substr(hostStart, slash - hostStart);
+std::string ExtractHostPort(const std::string &baseUrl)
+{
+   auto pos = baseUrl.find("://");
+   if (pos == std::string::npos) {
+      return {};
+   }
+   auto hostStart = pos + 3;
+   auto slash     = baseUrl.find('/', hostStart);
+   if (slash == std::string::npos) {
+      return baseUrl.substr(hostStart);
+   }
+   return baseUrl.substr(hostStart, slash - hostStart);
 }
 
-std::string EncodeUrlForCurl(const std::string& rawUrl) {
-    std::string encoded;
-    encoded.reserve(rawUrl.size());
+std::string EncodeUrlForCurl(const std::string &rawUrl)
+{
+   std::string encoded;
+   encoded.reserve(rawUrl.size());
 
-    for (unsigned char ch : rawUrl) {
-        if (ch == ' ') {
-            encoded += "%20";
-            continue;
-        }
+   for (unsigned char ch : rawUrl) {
+      if (ch == ' ') {
+         encoded += "%20";
+         continue;
+      }
 
-        encoded.push_back(static_cast<char>(ch));
-    }
+      encoded.push_back(static_cast<char>(ch));
+   }
 
-    return encoded;
+   return encoded;
 }
 
-std::string DecodePercentEncoding(const std::string& value) {
-    std::string decoded;
-    decoded.reserve(value.size());
-    for (std::size_t i = 0; i < value.size(); ++i) {
-        const char ch = value[i];
-        if (ch == '%' && i + 2 < value.size() && std::isxdigit(static_cast<unsigned char>(value[i + 1])) &&
-            std::isxdigit(static_cast<unsigned char>(value[i + 2]))) {
-            const auto hi = static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(value[i + 1])));
-            const auto lo = static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(value[i + 2])));
-            const auto nibble = [](unsigned char c) -> unsigned char {
-                if (c >= '0' && c <= '9') {
-                    return static_cast<unsigned char>(c - '0');
-                }
-                return static_cast<unsigned char>(10 + (c - 'A'));
-            };
-            decoded.push_back(static_cast<char>((nibble(hi) << 4) | nibble(lo)));
-            i += 2;
-            continue;
-        }
-        decoded.push_back(ch);
-    }
-    return decoded;
+std::string DecodePercentEncoding(const std::string &value)
+{
+   std::string decoded;
+   decoded.reserve(value.size());
+   for (std::size_t i = 0; i < value.size(); ++i) {
+      const char ch = value[i];
+      if (ch == '%' && i + 2 < value.size() && std::isxdigit(static_cast<unsigned char>(value[i + 1])) &&
+          std::isxdigit(static_cast<unsigned char>(value[i + 2]))) {
+         const auto hi     = static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(value[i + 1])));
+         const auto lo     = static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(value[i + 2])));
+         const auto nibble = [](unsigned char c) -> unsigned char {
+            if (c >= '0' && c <= '9') {
+               return static_cast<unsigned char>(c - '0');
+            }
+            return static_cast<unsigned char>(10 + (c - 'A'));
+         };
+         decoded.push_back(static_cast<char>((nibble(hi) << 4) | nibble(lo)));
+         i += 2;
+         continue;
+      }
+      decoded.push_back(ch);
+   }
+   return decoded;
 }
 
-std::string EncodePath(const std::string& path) {
-    std::string encoded;
-    encoded.reserve(path.size());
-    for (unsigned char c : path) {
-        if (c == '/') {
-            encoded.push_back('/');
-        } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                   c == '-' || c == '_' || c == '.' || c == '~') {
-            encoded.push_back(static_cast<char>(c));
-        } else {
-            constexpr char kHex[] = "0123456789ABCDEF";
-            encoded.push_back('%');
-            encoded.push_back(kHex[(c >> 4) & 0x0F]);
-            encoded.push_back(kHex[c & 0x0F]);
-        }
-    }
-    return encoded;
+std::string EncodePath(const std::string &path)
+{
+   std::string encoded;
+   encoded.reserve(path.size());
+   for (unsigned char c : path) {
+      if (c == '/') {
+         encoded.push_back('/');
+      } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                 c == '-' || c == '_' || c == '.' || c == '~') {
+         encoded.push_back(static_cast<char>(c));
+      } else {
+         constexpr char kHex[] = "0123456789ABCDEF";
+         encoded.push_back('%');
+         encoded.push_back(kHex[(c >> 4) & 0x0F]);
+         encoded.push_back(kHex[c & 0x0F]);
+      }
+   }
+   return encoded;
 }
 
-std::string TrimFragmentAndQuery(const std::string& href) {
-    const auto queryPos = href.find('?');
-    const auto fragmentPos = href.find('#');
-    const auto cutPos = std::min(queryPos == std::string::npos ? href.size() : queryPos,
-                                 fragmentPos == std::string::npos ? href.size() : fragmentPos);
-    return href.substr(0, cutPos);
+std::string TrimFragmentAndQuery(const std::string &href)
+{
+   const auto queryPos    = href.find('?');
+   const auto fragmentPos = href.find('#');
+   const auto cutPos      = std::min(queryPos == std::string::npos ? href.size() : queryPos,
+       fragmentPos == std::string::npos ? href.size() : fragmentPos);
+   return href.substr(0, cutPos);
 }
 
-std::string NormalizeDirectoryPath(std::string path) {
-    while (!path.empty() && path.front() == '/') {
-        path.erase(path.begin());
-    }
-    if (!path.empty() && path.back() != '/') {
-        path.push_back('/');
-    }
-    return path;
+std::string NormalizeDirectoryPath(std::string path)
+{
+   while (!path.empty() && path.front() == '/') {
+      path.erase(path.begin());
+   }
+   if (!path.empty() && path.back() != '/') {
+      path.push_back('/');
+   }
+   return path;
 }
 
-std::string NormalizeFilePath(std::string path) {
-    while (!path.empty() && path.front() == '/') {
-        path.erase(path.begin());
-    }
-    while (!path.empty() && path.back() == '/') {
-        path.pop_back();
-    }
-    return path;
+std::string NormalizeFilePath(std::string path)
+{
+   while (!path.empty() && path.front() == '/') {
+      path.erase(path.begin());
+   }
+   while (!path.empty() && path.back() == '/') {
+      path.pop_back();
+   }
+   return path;
 }
 
-bool ContainsParentTraversal(const std::string& path) {
-    std::size_t start = 0;
-    while (start <= path.size()) {
-        const auto end = path.find('/', start);
-        const auto segment = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        if (segment == "..") {
-            return true;
-        }
-        if (end == std::string::npos) {
-            break;
-        }
-        start = end + 1;
-    }
-    return false;
+bool ContainsParentTraversal(const std::string &path)
+{
+   std::size_t start = 0;
+   while (start <= path.size()) {
+      const auto end     = path.find('/', start);
+      const auto segment = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
+      if (segment == "..") {
+         return true;
+      }
+      if (end == std::string::npos) {
+         break;
+      }
+      start = end + 1;
+   }
+   return false;
 }
 
-std::vector<std::string> ExtractHrefValues(const std::string& html) {
-    static const std::regex hrefPattern(R"(href\s*=\s*["']([^"']+)["'])", std::regex::icase);
-    std::vector<std::string> hrefs;
-    for (std::sregex_iterator it(html.begin(), html.end(), hrefPattern), end; it != end; ++it) {
-        hrefs.push_back((*it)[1].str());
-    }
-    return hrefs;
+std::vector<std::string> ExtractHrefValues(const std::string &html)
+{
+   static const std::regex hrefPattern(R"(href\s*=\s*["']([^"']+)["'])", std::regex::icase);
+   std::vector<std::string> hrefs;
+   for (std::sregex_iterator it(html.begin(), html.end(), hrefPattern), end; it != end; ++it) {
+      hrefs.push_back((*it)[1].str());
+   }
+   return hrefs;
 }
 
-bool ExtractPathFromHref(const std::string& href,
-                         const std::string& baseUrl,
-                         const std::string& repository,
-                         std::string& outPath,
-                         bool& isDirectory) {
-    std::string value = TrimFragmentAndQuery(href);
-    if (value.empty() || value == "." || value == "./" || value == ".." || value == "../") {
-        return false;
-    }
+bool ExtractPathFromHref(const std::string &href,
+    const std::string &baseUrl,
+    const std::string &repository,
+    std::string &outPath,
+    bool &isDirectory)
+{
+   std::string value = TrimFragmentAndQuery(href);
+   if (value.empty() || value == "." || value == "./" || value == ".." || value == "../") {
+      return false;
+   }
 
-    const auto browsePrefix = "/service/rest/repository/browse/" + repository + "/";
-    const auto repositoryPrefix = "/repository/" + repository + "/";
-    const auto browseAbsolute = baseUrl + browsePrefix;
-    const auto repositoryAbsolute = baseUrl + repositoryPrefix;
+   const auto browsePrefix       = "/service/rest/repository/browse/" + repository + "/";
+   const auto repositoryPrefix   = "/repository/" + repository + "/";
+   const auto browseAbsolute     = baseUrl + browsePrefix;
+   const auto repositoryAbsolute = baseUrl + repositoryPrefix;
 
-    if (value.rfind(browseAbsolute, 0) == 0) {
-        value = value.substr(browseAbsolute.size());
-        isDirectory = !value.empty() && value.back() == '/';
-    } else if (value.rfind(repositoryAbsolute, 0) == 0) {
-        value = value.substr(repositoryAbsolute.size());
-        isDirectory = false;
-    } else if (value.rfind(browsePrefix, 0) == 0) {
-        value = value.substr(browsePrefix.size());
-        isDirectory = !value.empty() && value.back() == '/';
-    } else if (value.rfind(repositoryPrefix, 0) == 0) {
-        value = value.substr(repositoryPrefix.size());
-        isDirectory = false;
-    } else if (value.find("://") != std::string::npos || value.rfind('/', 0) == 0) {
-        return false;
-    } else {
-        isDirectory = !value.empty() && value.back() == '/';
-    }
+   if (value.rfind(browseAbsolute, 0) == 0) {
+      value       = value.substr(browseAbsolute.size());
+      isDirectory = !value.empty() && value.back() == '/';
+   } else if (value.rfind(repositoryAbsolute, 0) == 0) {
+      value       = value.substr(repositoryAbsolute.size());
+      isDirectory = false;
+   } else if (value.rfind(browsePrefix, 0) == 0) {
+      value       = value.substr(browsePrefix.size());
+      isDirectory = !value.empty() && value.back() == '/';
+   } else if (value.rfind(repositoryPrefix, 0) == 0) {
+      value       = value.substr(repositoryPrefix.size());
+      isDirectory = false;
+   } else if (value.find("://") != std::string::npos || value.rfind('/', 0) == 0) {
+      return false;
+   } else {
+      isDirectory = !value.empty() && value.back() == '/';
+   }
 
-    value = DecodePercentEncoding(value);
-    if (ContainsParentTraversal(value)) {
-        return false;
-    }
-    outPath = isDirectory ? NormalizeDirectoryPath(value) : NormalizeFilePath(value);
-    return !outPath.empty();
+   value = DecodePercentEncoding(value);
+   if (ContainsParentTraversal(value)) {
+      return false;
+   }
+   outPath = isDirectory ? NormalizeDirectoryPath(value) : NormalizeFilePath(value);
+   return !outPath.empty();
 }
 
-}  // namespace
+} // namespace
 
 namespace confy {
 
 NexusClient::NexusClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
 
-std::string NexusClient::BuildCurlUserPwd(const ServerCredentials& creds) {
-    return creds.username + ":" + creds.password;
+std::string NexusClient::BuildCurlUserPwd(const ServerCredentials &creds)
+{
+   return creds.username + ":" + creds.password;
 }
 
 std::vector<std::string> NexusClient::ExtractImmediateChildDirectories(
-    const std::vector<std::string>& directoryPaths,
-    const std::string& parentPath) {
-    const auto normalizedParent = NormalizeDirectoryPath(parentPath);
-    std::unordered_set<std::string> values;
+    const std::vector<std::string> &directoryPaths,
+    const std::string &parentPath)
+{
+   const auto normalizedParent = NormalizeDirectoryPath(parentPath);
+   std::unordered_set<std::string> values;
 
-    for (const auto& directoryPath : directoryPaths) {
-        std::string normalized = directoryPath;
-        const auto normalizedOffset = normalized.find_first_not_of('/');
-        if (normalizedOffset == std::string::npos) {
-            continue;
-        }
-        if (normalizedOffset > 0) {
-            normalized = normalized.substr(normalizedOffset);
-        }
+   for (const auto &directoryPath : directoryPaths) {
+      std::string normalized      = directoryPath;
+      const auto normalizedOffset = normalized.find_first_not_of('/');
+      if (normalizedOffset == std::string::npos) {
+         continue;
+      }
+      if (normalizedOffset > 0) {
+         normalized = normalized.substr(normalizedOffset);
+      }
 
-        if (normalized.rfind(normalizedParent, 0) != 0) {
-            continue;
-        }
+      if (normalized.rfind(normalizedParent, 0) != 0) {
+         continue;
+      }
 
-        auto remaining = normalized.substr(normalizedParent.size());
-        const auto remainingOffset = remaining.find_first_not_of('/');
-        if (remainingOffset == std::string::npos) {
-            continue;
-        }
-        if (remainingOffset > 0) {
-            remaining = remaining.substr(remainingOffset);
-        }
+      auto remaining             = normalized.substr(normalizedParent.size());
+      const auto remainingOffset = remaining.find_first_not_of('/');
+      if (remainingOffset == std::string::npos) {
+         continue;
+      }
+      if (remainingOffset > 0) {
+         remaining = remaining.substr(remainingOffset);
+      }
 
-        if (remaining.empty() || remaining.back() != '/') {
-            continue;
-        }
+      if (remaining.empty() || remaining.back() != '/') {
+         continue;
+      }
 
-        const auto slash = remaining.find('/');
-        if (slash == std::string::npos || slash == 0) {
-            continue;
-        }
+      const auto slash = remaining.find('/');
+      if (slash == std::string::npos || slash == 0) {
+         continue;
+      }
 
-        values.insert(remaining.substr(0, slash));
-    }
+      values.insert(remaining.substr(0, slash));
+   }
 
-    std::vector<std::string> out(values.begin(), values.end());
-    std::sort(out.begin(), out.end());
-    return out;
+   std::vector<std::string> out(values.begin(), values.end());
+   std::sort(out.begin(), out.end());
+   return out;
 }
 
-bool NexusClient::ListComponentVersions(const std::string& repositoryBrowseUrl,
-                                        const std::string& componentName,
-                                        std::vector<std::string>& outVersions,
-                                        std::string& errorMessage) const {
-    wxLogMessage("[nexus] listing component versions component='%s' repoUrl='%s'",
-                 componentName.c_str(),
-                 repositoryBrowseUrl.c_str());
-    outVersions.clear();
-    RepoInfo repo;
-    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
-        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
-        return false;
-    }
+bool NexusClient::ListComponentVersions(const std::string &repositoryBrowseUrl,
+    const std::string &componentName,
+    std::vector<std::string> &outVersions,
+    std::string &errorMessage) const
+{
+   wxLogMessage("[nexus] listing component versions component='%s' repoUrl='%s'",
+       componentName.c_str(),
+       repositoryBrowseUrl.c_str());
+   outVersions.clear();
+   RepoInfo repo;
+   if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+      errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+      return false;
+   }
 
-    ServerCredentials creds;
-    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
-        errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
-        return false;
-    }
+   ServerCredentials creds;
+   if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+      errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+      return false;
+   }
 
-    if (!ListChildDirectories(repo, creds, componentName, outVersions, errorMessage)) {
-        return false;
-    }
+   if (!ListChildDirectories(repo, creds, componentName, outVersions, errorMessage)) {
+      return false;
+   }
 
-    wxLogMessage("[nexus] discovered versions component='%s' count=%zu",
-                 componentName.c_str(),
-                 outVersions.size());
-    // Keep per-component version logging bounded to avoid excessive console spam on large repos.
-    constexpr std::size_t kMaxLoggedVersions = 20;
-    const auto toLog = std::min(outVersions.size(), kMaxLoggedVersions);
-    for (std::size_t i = 0; i < toLog; ++i) {
-        const auto& version = outVersions[i];
-        wxLogMessage("[nexus] discovered version component='%s' value='%s'",
-                     componentName.c_str(),
-                     version.c_str());
-    }
-    if (outVersions.size() > kMaxLoggedVersions) {
-        wxLogMessage("[nexus] additional versions omitted component='%s' omittedCount=%zu",
-                     componentName.c_str(),
-                     outVersions.size() - kMaxLoggedVersions);
-    }
-    return true;
+   wxLogMessage("[nexus] discovered versions component='%s' count=%zu",
+       componentName.c_str(),
+       outVersions.size());
+   // Keep per-component version logging bounded to avoid excessive console spam on large repos.
+   constexpr std::size_t kMaxLoggedVersions = 20;
+   const auto toLog                         = std::min(outVersions.size(), kMaxLoggedVersions);
+   for (std::size_t i = 0; i < toLog; ++i) {
+      const auto &version = outVersions[i];
+      wxLogMessage("[nexus] discovered version component='%s' value='%s'",
+          componentName.c_str(),
+          version.c_str());
+   }
+   if (outVersions.size() > kMaxLoggedVersions) {
+      wxLogMessage("[nexus] additional versions omitted component='%s' omittedCount=%zu",
+          componentName.c_str(),
+          outVersions.size() - kMaxLoggedVersions);
+   }
+   return true;
 }
 
-bool NexusClient::ListBuildTypes(const std::string& repositoryBrowseUrl,
-                                 const std::string& componentName,
-                                 const std::string& version,
-                                 std::vector<std::string>& outBuildTypes,
-                                 std::string& errorMessage) const {
-    outBuildTypes.clear();
-    RepoInfo repo;
-    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
-        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
-        return false;
-    }
+bool NexusClient::ListBuildTypes(const std::string &repositoryBrowseUrl,
+    const std::string &componentName,
+    const std::string &version,
+    std::vector<std::string> &outBuildTypes,
+    std::string &errorMessage) const
+{
+   outBuildTypes.clear();
+   RepoInfo repo;
+   if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+      errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+      return false;
+   }
 
-    ServerCredentials creds;
-    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
-        errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
-        return false;
-    }
+   ServerCredentials creds;
+   if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+      errorMessage = "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+      return false;
+   }
 
-    const auto prefix = componentName + "/" + version;
-    if (!ListChildDirectories(repo, creds, prefix, outBuildTypes, errorMessage)) {
-        return false;
-    }
-    return true;
+   const auto prefix = componentName + "/" + version;
+   if (!ListChildDirectories(repo, creds, prefix, outBuildTypes, errorMessage)) {
+      return false;
+   }
+   return true;
 }
 
-bool NexusClient::DownloadArtifactTree(const std::string& repositoryBrowseUrl,
-                                       const std::string& componentName,
-                                       const std::string& version,
-                                       const std::string& buildType,
-                                       const std::string& targetDirectory,
-                                       const std::vector<std::string>& regexIncludes,
-                                       const std::vector<std::string>& regexExcludes,
-                                       std::atomic<bool>& cancelRequested,
-                                       ProgressCallback progress,
-                                       std::string& errorMessage) const {
-    wxLogMessage(
-        "[nexus] download request repoUrl='%s' component='%s' version='%s' buildType='%s' target='%s'",
-        repositoryBrowseUrl.c_str(),
-        componentName.c_str(),
-        version.c_str(),
-        buildType.c_str(),
-        targetDirectory.c_str());
+bool NexusClient::DownloadArtifactTree(const std::string &repositoryBrowseUrl,
+    const std::string &componentName,
+    const std::string &version,
+    const std::string &buildType,
+    const std::string &targetDirectory,
+    const std::vector<std::string> &regexIncludes,
+    const std::vector<std::string> &regexExcludes,
+    std::atomic<bool> &cancelRequested,
+    ProgressCallback progress,
+    std::string &errorMessage) const
+{
+   wxLogMessage(
+       "[nexus] download request repoUrl='%s' component='%s' version='%s' buildType='%s' target='%s'",
+       repositoryBrowseUrl.c_str(),
+       componentName.c_str(),
+       version.c_str(),
+       buildType.c_str(),
+       targetDirectory.c_str());
 
-    RepoInfo repo;
-    if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
-        errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
-        wxLogError("[nexus] parse repo URL failed: %s", errorMessage.c_str());
-        return false;
-    }
+   RepoInfo repo;
+   if (!ParseRepoInfo(repositoryBrowseUrl, repo)) {
+      errorMessage = "Unable to parse Nexus repository URL: " + repositoryBrowseUrl;
+      wxLogError("[nexus] parse repo URL failed: %s", errorMessage.c_str());
+      return false;
+   }
 
-    wxLogMessage("[nexus] parsed baseUrl='%s' repository='%s' hostPort='%s'",
-                 repo.baseUrl.c_str(),
-                 repo.repository.c_str(),
-                 repo.hostPort.c_str());
+   wxLogMessage("[nexus] parsed baseUrl='%s' repository='%s' hostPort='%s'",
+       repo.baseUrl.c_str(),
+       repo.repository.c_str(),
+       repo.hostPort.c_str());
 
-    ServerCredentials creds;
-    if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
-        errorMessage =
-            "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
-        wxLogError("[nexus] credential lookup failed for hostPort='%s'", repo.hostPort.c_str());
-        return false;
-    }
+   ServerCredentials creds;
+   if (!credentials_.TryGetForHost(repo.hostPort, creds)) {
+      errorMessage =
+          "No credentials found in ~/.m2/settings.xml for host '" + repo.hostPort + "'.";
+      wxLogError("[nexus] credential lookup failed for hostPort='%s'", repo.hostPort.c_str());
+      return false;
+   }
 
-    wxLogMessage("[nexus] credentials resolved for hostPort='%s' username='%s'",
-                 repo.hostPort.c_str(),
-                 creds.username.c_str());
+   wxLogMessage("[nexus] credentials resolved for hostPort='%s' username='%s'",
+       repo.hostPort.c_str(),
+       creds.username.c_str());
 
-    const auto prefix = componentName + "/" + version + "/" + buildType + "/";
+   const auto prefix = componentName + "/" + version + "/" + buildType + "/";
 
-    std::vector<NexusArtifactAsset> assets;
-    if (!ListAssets(repo, creds, prefix, assets, errorMessage)) {
-        wxLogError("[nexus] list assets failed: %s", errorMessage.c_str());
-        return false;
-    }
+   std::vector<NexusArtifactAsset> assets;
+   if (!ListAssets(repo, creds, prefix, assets, errorMessage)) {
+      wxLogError("[nexus] list assets failed: %s", errorMessage.c_str());
+      return false;
+   }
 
-    wxLogMessage(
-        "[nexus] total assets returned (query='%s')=%zu includeFilters=%zu excludeFilters=%zu",
-                 prefix.c_str(),
-                 assets.size(),
-                 regexIncludes.size(),
-                 regexExcludes.size());
+   wxLogMessage(
+       "[nexus] total assets returned (query='%s')=%zu includeFilters=%zu excludeFilters=%zu",
+       prefix.c_str(),
+       assets.size(),
+       regexIncludes.size(),
+       regexExcludes.size());
 
-    std::vector<std::regex> includeRegexes;
-    includeRegexes.reserve(regexIncludes.size());
-    for (const auto& pattern : regexIncludes) {
-        try {
-            includeRegexes.emplace_back(pattern);
-        } catch (const std::regex_error& ex) {
-            errorMessage = "Invalid include regex '" + pattern + "': " + ex.what();
-            return false;
-        }
-    }
+   std::vector<std::regex> includeRegexes;
+   includeRegexes.reserve(regexIncludes.size());
+   for (const auto &pattern : regexIncludes) {
+      try {
+         includeRegexes.emplace_back(pattern);
+      } catch (const std::regex_error &ex) {
+         errorMessage = "Invalid include regex '" + pattern + "': " + ex.what();
+         return false;
+      }
+   }
 
-    std::vector<std::regex> excludeRegexes;
-    excludeRegexes.reserve(regexExcludes.size());
-    for (const auto& pattern : regexExcludes) {
-        try {
-            excludeRegexes.emplace_back(pattern);
-        } catch (const std::regex_error& ex) {
-            errorMessage = "Invalid exclude regex '" + pattern + "': " + ex.what();
-            return false;
-        }
-    }
-    struct MatchedAsset {
-        NexusArtifactAsset asset;
-        std::string relativePath;
-    };
+   std::vector<std::regex> excludeRegexes;
+   excludeRegexes.reserve(regexExcludes.size());
+   for (const auto &pattern : regexExcludes) {
+      try {
+         excludeRegexes.emplace_back(pattern);
+      } catch (const std::regex_error &ex) {
+         errorMessage = "Invalid exclude regex '" + pattern + "': " + ex.what();
+         return false;
+      }
+   }
+   struct MatchedAsset
+   {
+      NexusArtifactAsset asset;
+      std::string relativePath;
+   };
 
-    auto extractRelativePath = [&prefix](const std::string& rawPath, std::string& relativePath) -> bool {
-        std::string normalized = rawPath;
-        while (!normalized.empty() && normalized.front() == '/') {
-            normalized.erase(normalized.begin());
-        }
+   auto extractRelativePath = [&prefix](const std::string &rawPath, std::string &relativePath) -> bool {
+      std::string normalized = rawPath;
+      while (!normalized.empty() && normalized.front() == '/') {
+         normalized.erase(normalized.begin());
+      }
 
-        if (normalized.rfind(prefix, 0) == 0) {
-            relativePath = normalized.substr(prefix.size());
-            return true;
-        }
+      if (normalized.rfind(prefix, 0) == 0) {
+         relativePath = normalized.substr(prefix.size());
+         return true;
+      }
 
-        const std::string slashPrefix = "/" + prefix;
-        auto pos = normalized.find(slashPrefix);
-        if (pos != std::string::npos) {
-            relativePath = normalized.substr(pos + slashPrefix.size());
-            return true;
-        }
+      const std::string slashPrefix = "/" + prefix;
+      auto pos                      = normalized.find(slashPrefix);
+      if (pos != std::string::npos) {
+         relativePath = normalized.substr(pos + slashPrefix.size());
+         return true;
+      }
 
-        pos = normalized.find(prefix);
-        if (pos != std::string::npos) {
-            relativePath = normalized.substr(pos + prefix.size());
-            return true;
-        }
+      pos = normalized.find(prefix);
+      if (pos != std::string::npos) {
+         relativePath = normalized.substr(pos + prefix.size());
+         return true;
+      }
 
-        return false;
-    };
+      return false;
+   };
 
-    std::vector<MatchedAsset> matches;
-    for (const auto& asset : assets) {
-        std::string relativePath;
-        if (extractRelativePath(asset.path, relativePath)) {
-            bool includeMatch = includeRegexes.empty();
-            if (!includeMatch) {
-                for (const auto& includeRegex : includeRegexes) {
-                    if (std::regex_search(relativePath, includeRegex)) {
-                        includeMatch = true;
-                        break;
-                    }
-                }
+   std::vector<MatchedAsset> matches;
+   for (const auto &asset : assets) {
+      std::string relativePath;
+      if (extractRelativePath(asset.path, relativePath)) {
+         bool includeMatch = includeRegexes.empty();
+         if (!includeMatch) {
+            for (const auto &includeRegex : includeRegexes) {
+               if (std::regex_search(relativePath, includeRegex)) {
+                  includeMatch = true;
+                  break;
+               }
             }
+         }
 
-            if (!includeMatch) {
-                continue;
-            }
-
-            bool excludeMatch = false;
-            for (const auto& excludeRegex : excludeRegexes) {
-                if (std::regex_search(relativePath, excludeRegex)) {
-                    excludeMatch = true;
-                    break;
-                }
-            }
-
-            if (excludeMatch) {
-                continue;
-            }
-
-            matches.push_back({asset, relativePath});
-        }
-    }
-
-    wxLogMessage("[nexus] filtered matches prefix='%s' count=%zu",
-                 prefix.c_str(),
-                 matches.size());
-
-    if (matches.empty()) {
-        errorMessage = "No assets found for path prefix: " + prefix;
-        for (const auto& asset : assets) {
-            wxLogMessage("[nexus] candidate asset path='%s'", asset.path.c_str());
-        }
-        wxLogError("[nexus] no matching assets");
-        return false;
-    }
-
-    if (!ResetDirectoryWithRetries(fs::path(targetDirectory), errorMessage)) {
-        wxLogError("[nexus] target directory reset failed target='%s' error='%s'",
-                   targetDirectory.c_str(),
-                   errorMessage.c_str());
-        return false;
-    }
-
-    const std::size_t total = matches.size();
-    std::size_t completed = 0;
-
-    for (const auto& matched : matches) {
-        if (cancelRequested.load()) {
-            wxLogMessage("[nexus] cancel requested during downloads");
-            return false;
-        }
-
-        const fs::path outputPath = fs::path(targetDirectory) / matched.relativePath;
-        fs::create_directories(outputPath.parent_path());
-
-        std::string downloadError;
-        std::uint64_t currentDownloadedBytes = 0;
-        wxLogMessage("[nexus] downloading path='%s' url='%s'",
-                     matched.asset.path.c_str(),
-                     matched.asset.downloadUrl.c_str());
-        if (!HttpDownloadBinary(
-                matched.asset.downloadUrl,
-                creds,
-                outputPath.string(),
-                cancelRequested,
-                [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
-                    currentDownloadedBytes = downloadedBytes;
-                    const double fileProgress = totalBytes > 0
-                                                    ? static_cast<double>(downloadedBytes) /
-                                                          static_cast<double>(totalBytes)
-                                                    : 0.0;
-                    const int overallPercent =
-                        static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
-                                         static_cast<double>(total));
-                    progress(overallPercent, downloadedBytes, matched.asset.path);
-                },
-                downloadError)) {
-            errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
-            wxLogError("[nexus] download failed path='%s' error='%s'",
-                       matched.asset.path.c_str(),
-                       downloadError.c_str());
-            return false;
-        }
-
-        ++completed;
-        const int overallPercent = static_cast<int>((completed * 100) / total);
-        progress(overallPercent, currentDownloadedBytes, matched.asset.path);
-    }
-
-    return true;
-}
-
-bool NexusClient::ParseRepoInfo(const std::string& inputUrl, RepoInfo& out) const {
-    const auto browseMarker = std::string("#browse/browse:");
-    const auto markerPos = inputUrl.find(browseMarker);
-    if (markerPos != std::string::npos) {
-        out.baseUrl = TrimTrailingSlash(inputUrl.substr(0, markerPos));
-        out.repository = inputUrl.substr(markerPos + browseMarker.size());
-        out.hostPort = ExtractHostPort(out.baseUrl);
-        return !out.baseUrl.empty() && !out.repository.empty();
-    }
-
-    const auto repoMarker = std::string("/repository/");
-    const auto repoPos = inputUrl.find(repoMarker);
-    if (repoPos != std::string::npos) {
-        out.baseUrl = TrimTrailingSlash(inputUrl.substr(0, repoPos));
-        auto repoStart = repoPos + repoMarker.size();
-        auto repoEnd = inputUrl.find('/', repoStart);
-        out.repository = repoEnd == std::string::npos ? inputUrl.substr(repoStart)
-                                                      : inputUrl.substr(repoStart, repoEnd - repoStart);
-        out.hostPort = ExtractHostPort(out.baseUrl);
-        return !out.baseUrl.empty() && !out.repository.empty();
-    }
-
-    return false;
-}
-
-bool NexusClient::ListAssets(const RepoInfo& repo,
-                             const ServerCredentials& creds,
-                             const std::string& query,
-                             std::vector<NexusArtifactAsset>& out,
-                             std::string& errorMessage) const {
-    const std::string startDirectory = NormalizeDirectoryPath(query);
-    std::vector<std::string> directories{startDirectory};
-    std::unordered_set<std::string> visitedDirectories;
-    std::unordered_set<std::string> seenFiles;
-
-    while (!directories.empty()) {
-        const std::string currentDirectory = directories.back();
-        directories.pop_back();
-
-        if (!visitedDirectories.insert(currentDirectory).second) {
+         if (!includeMatch) {
             continue;
-        }
+         }
 
-        std::string browseUrl = repo.baseUrl + "/service/rest/repository/browse/" + UrlEncode(repo.repository) + "/";
-        if (!currentDirectory.empty()) {
-            browseUrl += EncodePath(currentDirectory);
-        }
-
-        wxLogMessage("[nexus] browse listing url='%s'", browseUrl.c_str());
-
-        std::string responseBody;
-        if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
-            wxLogError("[nexus] browse listing request failed: %s", errorMessage.c_str());
-            return false;
-        }
-
-        std::size_t discovered = 0;
-        for (const auto& href : ExtractHrefValues(responseBody)) {
-            std::string resolvedPath;
-            bool isDirectory = false;
-            if (!ExtractPathFromHref(href, repo.baseUrl, repo.repository, resolvedPath, isDirectory)) {
-                continue;
+         bool excludeMatch = false;
+         for (const auto &excludeRegex : excludeRegexes) {
+            if (std::regex_search(relativePath, excludeRegex)) {
+               excludeMatch = true;
+               break;
             }
+         }
 
-            if (href.find("://") == std::string::npos && href.rfind('/', 0) != 0) {
-                resolvedPath = isDirectory ? NormalizeDirectoryPath(currentDirectory + resolvedPath)
-                                           : NormalizeFilePath(currentDirectory + resolvedPath);
-            }
-
-            if (isDirectory) {
-                directories.push_back(resolvedPath);
-            } else if (seenFiles.insert(resolvedPath).second) {
-                out.push_back({resolvedPath, repo.baseUrl + "/repository/" + repo.repository + "/" +
-                                                 EncodePath(resolvedPath)});
-                ++discovered;
-            }
-        }
-
-        wxLogMessage("[nexus] browse listing discovered files=%zu", discovered);
-    }
-
-    return true;
-}
-
-bool NexusClient::ListChildDirectories(const RepoInfo& repo,
-                                       const ServerCredentials& creds,
-                                       const std::string& parentPath,
-                                       std::vector<std::string>& out,
-                                       std::string& errorMessage) const {
-    out.clear();
-    const std::string normalizedParent = NormalizeDirectoryPath(parentPath);
-    std::string browseUrl = repo.baseUrl + "/service/rest/repository/browse/" + UrlEncode(repo.repository) + "/";
-    if (!normalizedParent.empty()) {
-        browseUrl += EncodePath(normalizedParent);
-    }
-
-    std::string responseBody;
-    if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
-        return false;
-    }
-
-    std::vector<std::string> directoryPaths;
-    directoryPaths.reserve(32);
-    for (const auto& href : ExtractHrefValues(responseBody)) {
-        std::string resolvedPath;
-        bool isDirectory = false;
-        if (!ExtractPathFromHref(href, repo.baseUrl, repo.repository, resolvedPath, isDirectory) || !isDirectory) {
+         if (excludeMatch) {
             continue;
-        }
+         }
 
-        if (href.find("://") == std::string::npos && href.rfind('/', 0) != 0) {
-            resolvedPath = NormalizeDirectoryPath(normalizedParent + resolvedPath);
-        }
-        directoryPaths.push_back(resolvedPath);
-    }
+         matches.push_back({asset, relativePath});
+      }
+   }
 
-    out = ExtractImmediateChildDirectories(directoryPaths, normalizedParent);
-    return true;
+   wxLogMessage("[nexus] filtered matches prefix='%s' count=%zu",
+       prefix.c_str(),
+       matches.size());
+
+   if (matches.empty()) {
+      errorMessage = "No assets found for path prefix: " + prefix;
+      for (const auto &asset : assets) {
+         wxLogMessage("[nexus] candidate asset path='%s'", asset.path.c_str());
+      }
+      wxLogError("[nexus] no matching assets");
+      return false;
+   }
+
+   if (!ResetDirectoryWithRetries(fs::path(targetDirectory), errorMessage)) {
+      wxLogError("[nexus] target directory reset failed target='%s' error='%s'",
+          targetDirectory.c_str(),
+          errorMessage.c_str());
+      return false;
+   }
+
+   const std::size_t total = matches.size();
+   std::size_t completed   = 0;
+
+   for (const auto &matched : matches) {
+      if (cancelRequested.load()) {
+         wxLogMessage("[nexus] cancel requested during downloads");
+         return false;
+      }
+
+      const fs::path outputPath = fs::path(targetDirectory) / matched.relativePath;
+      fs::create_directories(outputPath.parent_path());
+
+      std::string downloadError;
+      std::uint64_t currentDownloadedBytes = 0;
+      wxLogMessage("[nexus] downloading path='%s' url='%s'",
+          matched.asset.path.c_str(),
+          matched.asset.downloadUrl.c_str());
+      if (!HttpDownloadBinary(
+              matched.asset.downloadUrl,
+              creds,
+              outputPath.string(),
+              cancelRequested,
+              [&](std::uint64_t downloadedBytes, std::uint64_t totalBytes) {
+                 currentDownloadedBytes    = downloadedBytes;
+                 const double fileProgress = totalBytes > 0
+                                                 ? static_cast<double>(downloadedBytes) /
+                                                       static_cast<double>(totalBytes)
+                                                 : 0.0;
+                 const int overallPercent =
+                     static_cast<int>(((static_cast<double>(completed) + fileProgress) * 100.0) /
+                                      static_cast<double>(total));
+                 progress(overallPercent, downloadedBytes, matched.asset.path);
+              },
+              downloadError)) {
+         errorMessage = "Failed downloading '" + matched.asset.path + "': " + downloadError;
+         wxLogError("[nexus] download failed path='%s' error='%s'",
+             matched.asset.path.c_str(),
+             downloadError.c_str());
+         return false;
+      }
+
+      ++completed;
+      const int overallPercent = static_cast<int>((completed * 100) / total);
+      progress(overallPercent, currentDownloadedBytes, matched.asset.path);
+   }
+
+   return true;
 }
 
-bool NexusClient::HttpGetText(const std::string& url,
-                              const ServerCredentials& creds,
-                              std::string& out,
-                              std::string& errorMessage) const {
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        errorMessage = "Failed to initialize curl";
-        return false;
-    }
+bool NexusClient::ParseRepoInfo(const std::string &inputUrl, RepoInfo &out) const
+{
+   const auto browseMarker = std::string("#browse/browse:");
+   const auto markerPos    = inputUrl.find(browseMarker);
+   if (markerPos != std::string::npos) {
+      out.baseUrl    = TrimTrailingSlash(inputUrl.substr(0, markerPos));
+      out.repository = inputUrl.substr(markerPos + browseMarker.size());
+      out.hostPort   = ExtractHostPort(out.baseUrl);
+      return !out.baseUrl.empty() && !out.repository.empty();
+   }
 
-    out.clear();
-    const std::string requestUrl = EncodeUrlForCurl(url);
-    const std::string userPwd = BuildCurlUserPwd(creds);
-    curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToString);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
+   const auto repoMarker = std::string("/repository/");
+   const auto repoPos    = inputUrl.find(repoMarker);
+   if (repoPos != std::string::npos) {
+      out.baseUrl    = TrimTrailingSlash(inputUrl.substr(0, repoPos));
+      auto repoStart = repoPos + repoMarker.size();
+      auto repoEnd   = inputUrl.find('/', repoStart);
+      out.repository = repoEnd == std::string::npos ? inputUrl.substr(repoStart)
+                                                    : inputUrl.substr(repoStart, repoEnd - repoStart);
+      out.hostPort   = ExtractHostPort(out.baseUrl);
+      return !out.baseUrl.empty() && !out.repository.empty();
+   }
 
-    const CURLcode result = curl_easy_perform(curl);
-    long statusCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
-    curl_easy_cleanup(curl);
-
-    if (result != CURLE_OK) {
-        errorMessage = std::string("HTTP request failed: ") + curl_easy_strerror(result);
-        wxLogError("[nexus] http get failed error='%s'", errorMessage.c_str());
-        return false;
-    }
-
-    if (statusCode < 200 || statusCode >= 300) {
-        errorMessage = "HTTP status " + std::to_string(statusCode);
-        wxLogError("[nexus] http get status=%ld", statusCode);
-        return false;
-    }
-
-    return true;
+   return false;
 }
 
-bool NexusClient::HttpDownloadBinary(const std::string& url,
-                                     const ServerCredentials& creds,
-                                     const std::string& outFile,
-                                     std::atomic<bool>& cancelRequested,
-                                     DownloadProgressCallback progress,
-                                     std::string& errorMessage) const {
-    std::ofstream output(outFile, std::ios::binary);
-    if (!output) {
-        errorMessage = "Unable to open local output file";
-        wxLogError("[nexus] open output file failed path='%s'", outFile.c_str());
-        return false;
-    }
+bool NexusClient::ListAssets(const RepoInfo &repo,
+    const ServerCredentials &creds,
+    const std::string &query,
+    std::vector<NexusArtifactAsset> &out,
+    std::string &errorMessage) const
+{
+   const std::string startDirectory = NormalizeDirectoryPath(query);
+   std::vector<std::string> directories{startDirectory};
+   std::unordered_set<std::string> visitedDirectories;
+   std::unordered_set<std::string> seenFiles;
 
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        errorMessage = "Failed to initialize curl";
-        return false;
-    }
+   while (!directories.empty()) {
+      const std::string currentDirectory = directories.back();
+      directories.pop_back();
 
-    const std::string requestUrl = EncodeUrlForCurl(url);
-    const std::string userPwd = BuildCurlUserPwd(creds);
-    DownloadProgressContext progressContext{progress, &cancelRequested};
-    curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToFile);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, OnDownloadProgress);
-    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progressContext);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
+      if (!visitedDirectories.insert(currentDirectory).second) {
+         continue;
+      }
 
-    const CURLcode result = curl_easy_perform(curl);
-    long statusCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
-    curl_easy_cleanup(curl);
+      std::string browseUrl = repo.baseUrl + "/service/rest/repository/browse/" + UrlEncode(repo.repository) + "/";
+      if (!currentDirectory.empty()) {
+         browseUrl += EncodePath(currentDirectory);
+      }
 
-    auto deletePartialFile = [outFile]() {
-        std::error_code removeError;
-        fs::remove(outFile, removeError);
-        if (removeError) {
-            wxLogError("[nexus] failed to remove partial file path='%s' error='%s'",
-                       outFile.c_str(),
-                       removeError.message().c_str());
-        }
-    };
+      wxLogMessage("[nexus] browse listing url='%s'", browseUrl.c_str());
 
-    if (result != CURLE_OK) {
-        if (cancelRequested.load() && result == CURLE_ABORTED_BY_CALLBACK) {
-            errorMessage = "Download cancelled";
-        } else {
-            errorMessage = std::string("HTTP download failed: ") + curl_easy_strerror(result);
-        }
-        if (output.is_open()) {
-            output.close();
-        }
-        deletePartialFile();
-        wxLogError("[nexus] http download failed path='%s' error='%s'",
-                   outFile.c_str(),
-                   errorMessage.c_str());
-        return false;
-    }
+      std::string responseBody;
+      if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
+         wxLogError("[nexus] browse listing request failed: %s", errorMessage.c_str());
+         return false;
+      }
 
-    if (statusCode < 200 || statusCode >= 300) {
-        errorMessage = "HTTP status " + std::to_string(statusCode);
-        if (output.is_open()) {
-            output.close();
-        }
-        deletePartialFile();
-        wxLogError("[nexus] http download status=%ld path='%s'", statusCode, outFile.c_str());
-        return false;
-    }
+      std::size_t discovered = 0;
+      for (const auto &href : ExtractHrefValues(responseBody)) {
+         std::string resolvedPath;
+         bool isDirectory = false;
+         if (!ExtractPathFromHref(href, repo.baseUrl, repo.repository, resolvedPath, isDirectory)) {
+            continue;
+         }
 
-    if (!output.good()) {
-        errorMessage = "Unable to write local output file";
-        if (output.is_open()) {
-            output.close();
-        }
-        deletePartialFile();
-        wxLogError("[nexus] write output file failed path='%s'", outFile.c_str());
-        return false;
-    }
+         if (href.find("://") == std::string::npos && href.rfind('/', 0) != 0) {
+            resolvedPath = isDirectory ? NormalizeDirectoryPath(currentDirectory + resolvedPath)
+                                       : NormalizeFilePath(currentDirectory + resolvedPath);
+         }
 
-    return true;
+         if (isDirectory) {
+            directories.push_back(resolvedPath);
+         } else if (seenFiles.insert(resolvedPath).second) {
+            out.push_back({resolvedPath, repo.baseUrl + "/repository/" + repo.repository + "/" +
+                                             EncodePath(resolvedPath)});
+            ++discovered;
+         }
+      }
+
+      wxLogMessage("[nexus] browse listing discovered files=%zu", discovered);
+   }
+
+   return true;
 }
 
-}  // namespace confy
+bool NexusClient::ListChildDirectories(const RepoInfo &repo,
+    const ServerCredentials &creds,
+    const std::string &parentPath,
+    std::vector<std::string> &out,
+    std::string &errorMessage) const
+{
+   out.clear();
+   const std::string normalizedParent = NormalizeDirectoryPath(parentPath);
+   std::string browseUrl              = repo.baseUrl + "/service/rest/repository/browse/" + UrlEncode(repo.repository) + "/";
+   if (!normalizedParent.empty()) {
+      browseUrl += EncodePath(normalizedParent);
+   }
+
+   std::string responseBody;
+   if (!HttpGetText(browseUrl, creds, responseBody, errorMessage)) {
+      return false;
+   }
+
+   std::vector<std::string> directoryPaths;
+   directoryPaths.reserve(32);
+   for (const auto &href : ExtractHrefValues(responseBody)) {
+      std::string resolvedPath;
+      bool isDirectory = false;
+      if (!ExtractPathFromHref(href, repo.baseUrl, repo.repository, resolvedPath, isDirectory) || !isDirectory) {
+         continue;
+      }
+
+      if (href.find("://") == std::string::npos && href.rfind('/', 0) != 0) {
+         resolvedPath = NormalizeDirectoryPath(normalizedParent + resolvedPath);
+      }
+      directoryPaths.push_back(resolvedPath);
+   }
+
+   out = ExtractImmediateChildDirectories(directoryPaths, normalizedParent);
+   return true;
+}
+
+bool NexusClient::HttpGetText(const std::string &url,
+    const ServerCredentials &creds,
+    std::string &out,
+    std::string &errorMessage) const
+{
+   CURL *curl = curl_easy_init();
+   if (!curl) {
+      errorMessage = "Failed to initialize curl";
+      return false;
+   }
+
+   out.clear();
+   const std::string requestUrl = EncodeUrlForCurl(url);
+   const std::string userPwd    = BuildCurlUserPwd(creds);
+   curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
+   curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToString);
+   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
+   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
+
+   const CURLcode result = curl_easy_perform(curl);
+   long statusCode       = 0;
+   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
+   curl_easy_cleanup(curl);
+
+   if (result != CURLE_OK) {
+      errorMessage = std::string("HTTP request failed: ") + curl_easy_strerror(result);
+      wxLogError("[nexus] http get failed error='%s'", errorMessage.c_str());
+      return false;
+   }
+
+   if (statusCode < 200 || statusCode >= 300) {
+      errorMessage = "HTTP status " + std::to_string(statusCode);
+      wxLogError("[nexus] http get status=%ld", statusCode);
+      return false;
+   }
+
+   return true;
+}
+
+bool NexusClient::HttpDownloadBinary(const std::string &url,
+    const ServerCredentials &creds,
+    const std::string &outFile,
+    std::atomic<bool> &cancelRequested,
+    DownloadProgressCallback progress,
+    std::string &errorMessage) const
+{
+   std::ofstream output(outFile, std::ios::binary);
+   if (!output) {
+      errorMessage = "Unable to open local output file";
+      wxLogError("[nexus] open output file failed path='%s'", outFile.c_str());
+      return false;
+   }
+
+   CURL *curl = curl_easy_init();
+   if (!curl) {
+      errorMessage = "Failed to initialize curl";
+      return false;
+   }
+
+   const std::string requestUrl = EncodeUrlForCurl(url);
+   const std::string userPwd    = BuildCurlUserPwd(creds);
+   DownloadProgressContext progressContext{progress, &cancelRequested};
+   curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
+   curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToFile);
+   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
+   curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+   curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, OnDownloadProgress);
+   curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progressContext);
+   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
+
+   const CURLcode result = curl_easy_perform(curl);
+   long statusCode       = 0;
+   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
+   curl_easy_cleanup(curl);
+
+   auto deletePartialFile = [outFile]() {
+      std::error_code removeError;
+      fs::remove(outFile, removeError);
+      if (removeError) {
+         wxLogError("[nexus] failed to remove partial file path='%s' error='%s'",
+             outFile.c_str(),
+             removeError.message().c_str());
+      }
+   };
+
+   if (result != CURLE_OK) {
+      if (cancelRequested.load() && result == CURLE_ABORTED_BY_CALLBACK) {
+         errorMessage = "Download cancelled";
+      } else {
+         errorMessage = std::string("HTTP download failed: ") + curl_easy_strerror(result);
+      }
+      if (output.is_open()) {
+         output.close();
+      }
+      deletePartialFile();
+      wxLogError("[nexus] http download failed path='%s' error='%s'",
+          outFile.c_str(),
+          errorMessage.c_str());
+      return false;
+   }
+
+   if (statusCode < 200 || statusCode >= 300) {
+      errorMessage = "HTTP status " + std::to_string(statusCode);
+      if (output.is_open()) {
+         output.close();
+      }
+      deletePartialFile();
+      wxLogError("[nexus] http download status=%ld path='%s'", statusCode, outFile.c_str());
+      return false;
+   }
+
+   if (!output.good()) {
+      errorMessage = "Unable to write local output file";
+      if (output.is_open()) {
+         output.close();
+      }
+      deletePartialFile();
+      wxLogError("[nexus] write output file failed path='%s'", outFile.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+} // namespace confy

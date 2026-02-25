@@ -5,19 +5,21 @@
 
 namespace confy {
 
-struct ServerCredentials {
-    std::string username;
-    std::string password;
+struct ServerCredentials
+{
+   std::string username;
+   std::string password;
 };
 
-class AuthCredentials final {
-public:
-    bool LoadFromM2SettingsXml(const std::string& filePath, std::string& errorMessage);
-    bool TryGetByServerId(const std::string& serverId, ServerCredentials& out) const;
-    bool TryGetForHost(const std::string& hostPort, ServerCredentials& out) const;
+class AuthCredentials final
+{
+ public:
+   bool LoadFromM2SettingsXml(const std::string &filePath, std::string &errorMessage);
+   bool TryGetByServerId(const std::string &serverId, ServerCredentials &out) const;
+   bool TryGetForHost(const std::string &hostPort, ServerCredentials &out) const;
 
-private:
-    std::unordered_map<std::string, ServerCredentials> credentialsByHostPort_;
+ private:
+   std::unordered_map<std::string, ServerCredentials> credentialsByHostPort_;
 };
 
-}  // namespace confy
+} // namespace confy

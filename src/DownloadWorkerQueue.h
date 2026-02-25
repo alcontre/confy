@@ -12,39 +12,40 @@
 
 namespace confy {
 
-class DownloadWorkerQueue final {
-public:
-    explicit DownloadWorkerQueue(std::size_t workerCount);
-    ~DownloadWorkerQueue();
+class DownloadWorkerQueue final
+{
+ public:
+   explicit DownloadWorkerQueue(std::size_t workerCount);
+   ~DownloadWorkerQueue();
 
-    void Start();
-    void Stop();
-    void Submit(DownloadJob job);
-    void RequestCancelAll();
-    bool TryPopEvent(DownloadEvent& outEvent);
+   void Start();
+   void Stop();
+   void Submit(DownloadJob job);
+   void RequestCancelAll();
+   bool TryPopEvent(DownloadEvent &outEvent);
 
-private:
-    void WorkerLoop();
-    void PushEvent(DownloadEvent event);
-    void ProcessJob(const DownloadJob& job);
-    void ProcessJob(const NexusDownloadJob& job);
-    bool ExecutePostDownloadScript(const std::string& script,
-                                   const std::string& workingDirectory,
-                                   std::string& errorMessage);
+ private:
+   void WorkerLoop();
+   void PushEvent(DownloadEvent event);
+   void ProcessJob(const DownloadJob &job);
+   void ProcessJob(const NexusDownloadJob &job);
+   bool ExecutePostDownloadScript(const std::string &script,
+       const std::string &workingDirectory,
+       std::string &errorMessage);
 
-    std::size_t workerCount_{0};
-    std::vector<std::thread> workers_;
+   std::size_t workerCount_{0};
+   std::vector<std::thread> workers_;
 
-    std::mutex queueMutex_;
-    std::condition_variable queueCv_;
-    std::queue<DownloadJob> pendingJobs_;
+   std::mutex queueMutex_;
+   std::condition_variable queueCv_;
+   std::queue<DownloadJob> pendingJobs_;
 
-    std::mutex eventMutex_;
-    std::queue<DownloadEvent> events_;
+   std::mutex eventMutex_;
+   std::queue<DownloadEvent> events_;
 
-    bool started_{false};
-    bool stopping_{false};
-    std::atomic<bool> cancelAllRequested_{false};
+   bool started_{false};
+   bool stopping_{false};
+   std::atomic<bool> cancelAllRequested_{false};
 };
 
-}  // namespace confy
+} // namespace confy

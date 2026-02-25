@@ -7,20 +7,21 @@ class wxFileConfig;
 
 namespace confy {
 
-class AppSettings {
-public:
-    static void Initialize(const std::string& executableDir);
-    static AppSettings& Get();
+class AppSettings
+{
+ public:
+   static void Initialize(const std::string &executableDir);
+   static AppSettings &Get();
 
-    std::string GetLastConfigPath() const;
-    void SetLastConfigPath(const std::string& path);
-    std::string GetXmlRepoUrl() const;
-    void SetXmlRepoUrl(const std::string& url);
+   std::string GetLastConfigPath() const;
+   void SetLastConfigPath(const std::string &path);
+   std::string GetXmlRepoUrl() const;
+   void SetXmlRepoUrl(const std::string &url);
 
-private:
-    explicit AppSettings(const std::string& executableDir);
+ private:
+   explicit AppSettings(const std::string &executableDir);
 
-    std::unique_ptr<wxFileConfig> config_;
+   std::unique_ptr<wxFileConfig> config_;
 };
 
-}  // namespace confy
+} // namespace confy
