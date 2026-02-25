@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -19,6 +20,8 @@ class wxButton;
 class wxCheckBox;
 class wxComboBox;
 class wxCommandEvent;
+class wxCloseEvent;
+class wxSizeEvent;
 class wxUpdateUIEvent;
 class wxPanel;
 class wxScrolledWindow;
@@ -29,7 +32,7 @@ namespace confy {
 
 class MainFrame final : public wxFrame {
 public:
-    MainFrame();
+    MainFrame(const wxString& initialConfigPath, std::function<void()> onReturnToPicker);
     ~MainFrame() override;
 
 private:
@@ -42,9 +45,10 @@ private:
         wxComboBox* artifactBuildType{nullptr};
     };
 
-    void OnLoadConfig(wxCommandEvent& event);
-    void OnLoadLastConfig(wxCommandEvent& event);
-    void OnLoadFromBitbucket(wxCommandEvent& event);
+    void OnCloseConfig(wxCommandEvent& event);
+    void OnReloadConfig(wxCommandEvent& event);
+    void OnExit(wxCommandEvent& event);
+    void OnCloseWindow(wxCloseEvent& event);
     void OnSaveAs(wxCommandEvent& event);
     void OnApply(wxCommandEvent& event);
     void OnSelectAll(wxCommandEvent& event);
@@ -52,15 +56,14 @@ private:
     void OnCopyConfig(wxCommandEvent& event);
     void OnToggleDebugConsole(wxCommandEvent& event);
     void OnUpdateSaveAs(wxUpdateUIEvent& event);
-    void OnUpdateLoadLastConfig(wxUpdateUIEvent& event);
     void OnUpdateSelectAll(wxUpdateUIEvent& event);
     void OnUpdateDeselectAll(wxUpdateUIEvent& event);
     void OnUpdateCopyConfig(wxUpdateUIEvent& event);
     void OnUpdateDebugConsole(wxUpdateUIEvent& event);
+    void OnFrameSize(wxSizeEvent& event);
     void RelayoutComponentArea();
-    void SyncComponentAreaVirtualSize();
     void RenderConfig();
-    void LoadConfigFromPath(const wxString& path);
+    bool LoadConfigFromPath(const wxString& path);
     void AddComponentRow(std::size_t componentIndex);
     void UpdateComboTooltip(wxComboBox& comboBox);
     void UpdateRowTooltips(std::size_t componentIndex);
@@ -90,11 +93,8 @@ private:
     ConfigModel config_;
     wxStaticText* statusLabel_{nullptr};
     wxScrolledWindow* componentScroll_{nullptr};
+    wxPanel* componentContentPanel_{nullptr};
     wxSizer* componentListSizer_{nullptr};
-    wxPanel* emptyStatePanel_{nullptr};
-    wxButton* loadConfigButton_{nullptr};
-    wxButton* loadLastConfigButton_{nullptr};
-    wxButton* loadFromBitbucketButton_{nullptr};
     wxButton* applyButton_{nullptr};
     std::vector<ComponentRowWidgets> rows_;
     std::vector<ComponentMetadataState> metadataState_;
@@ -109,6 +109,8 @@ private:
     std::unordered_set<std::string> metadataTaskKeys_;
     std::vector<std::thread> metadataWorkers_;
     bool stopMetadataWorkers_{false};
+    bool exitRequested_{false};
+    std::function<void()> onReturnToPicker_;
 };
 
 }  // namespace confy

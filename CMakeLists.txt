@@ -28,6 +28,7 @@ set(CONFY_SOURCES
     src/App.cpp
     src/AppSettings.cpp
     src/DebugConsole.cpp
+    src/PickMenuFrame.cpp
     src/MainFrame.cpp
     src/ConfigLoader.cpp
     src/ConfigWriter.cpp
@@ -43,6 +44,7 @@ set(CONFY_HEADERS
     src/App.h
     src/AppSettings.h
     src/DebugConsole.h
+    src/PickMenuFrame.h
     src/MainFrame.h
     src/ConfigModel.h
     src/ConfigLoader.h

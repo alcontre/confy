@@ -2,7 +2,6 @@
 
 #include "AppSettings.h"
 #include "AuthCredentials.h"
-#include "BitbucketClient.h"
 #include "ConfigLoader.h"
 #include "ConfigWriter.h"
 #include "DebugConsole.h"
@@ -13,14 +12,11 @@
 #include <wx/clipbrd.h>
 #include <wx/app.h>
 #include <wx/button.h>
-#include <wx/choice.h>
 #include <wx/checkbox.h>
 #include <wx/combobox.h>
 #include <wx/dataobj.h>
-#include <wx/dialog.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
-#include <wx/listbox.h>
 #include <wx/log.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
@@ -33,22 +29,19 @@
 #include <wx/utils.h>
 
 #include <algorithm>
-#include <atomic>
-#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <thread>
 
 namespace {
 
-constexpr int kIdLoadConfig = wxID_HIGHEST + 1;
+constexpr int kIdReloadConfig = wxID_HIGHEST + 1;
 constexpr int kIdApply = wxID_HIGHEST + 2;
 constexpr int kIdDeselectAll = wxID_HIGHEST + 3;
 constexpr int kIdViewDebugConsole = wxID_HIGHEST + 4;
-constexpr int kIdLoadLastConfig = wxID_HIGHEST + 5;
+constexpr int kIdCloseConfig = wxID_HIGHEST + 5;
 constexpr int kIdSaveAs = wxID_HIGHEST + 6;
 constexpr int kIdCopyConfig = wxID_HIGHEST + 7;
-constexpr int kIdLoadFromBitbucket = wxID_HIGHEST + 8;
 constexpr int kSectionLabelWidth = 64;
 constexpr int kFieldLabelWidth = 72;
 
@@ -62,253 +55,20 @@ bool HasArtifact(const confy::ComponentConfig& component) {
         !component.artifact.buildType.empty() || !component.artifact.script.empty();
 }
 
-std::string ResolveM2SettingsPath() {
-#ifdef _WIN32
-    std::string homeDir;
-    if (const char* h = std::getenv("USERPROFILE")) {
-        homeDir = h;
-    } else {
-        const char* drive = std::getenv("HOMEDRIVE");
-        const char* homepath = std::getenv("HOMEPATH");
-        if (drive && homepath) {
-            homeDir = std::string(drive) + homepath;
-        }
-    }
-#else
-    const char* homeEnv = std::getenv("HOME");
-    const std::string homeDir = homeEnv ? homeEnv : "";
-#endif
-
-    if (homeDir.empty()) {
-        return {};
-    }
-    return (std::filesystem::path(homeDir) / ".m2" / "settings.xml").string();
-}
-
-class BitbucketLoadDialog final : public wxDialog {
-public:
-    BitbucketLoadDialog(wxWindow* parent,
-                        confy::BitbucketClient& client,
-                                                const std::string& repoUrl)
-        : wxDialog(parent, wxID_ANY, "Load from Bitbucket", wxDefaultPosition, wxSize(680, 460)),
-                    client_(client),
-                    repoUrl_(repoUrl) {
-        auto* root = new wxBoxSizer(wxVERTICAL);
-
-                root->Add(new wxStaticText(this, wxID_ANY, wxString::Format("Repo: %s", repoUrl_)),
-                                    0,
-                                    wxLEFT | wxRIGHT | wxTOP | wxEXPAND,
-                                    10);
-
-        auto* branchRow = new wxBoxSizer(wxHORIZONTAL);
-        branchRow->Add(new wxStaticText(this, wxID_ANY, "Branch"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        branchChoice_ = new wxChoice(this, wxID_ANY);
-        branchRow->Add(branchChoice_, 1, wxEXPAND);
-                refreshButton_ = new wxButton(this, wxID_ANY, "Refresh");
-                branchRow->Add(refreshButton_, 0, wxLEFT, 8);
-                root->Add(branchRow, 0, wxALL | wxEXPAND, 10);
-
-        root->Add(new wxStaticText(this, wxID_ANY, "XML files"), 0, wxLEFT | wxRIGHT, 10);
-        fileList_ = new wxListBox(this, wxID_ANY);
-        root->Add(fileList_, 1, wxALL | wxEXPAND, 10);
-
-        statusLabel_ = new wxStaticText(this, wxID_ANY, "Enter repo URL and click Fetch.");
-        root->Add(statusLabel_, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
-
-        auto* buttons = new wxStdDialogButtonSizer();
-        okButton_ = new wxButton(this, wxID_OK, "Load");
-        okButton_->Disable();
-        buttons->AddButton(okButton_);
-        buttons->AddButton(new wxButton(this, wxID_CANCEL, "Cancel"));
-        buttons->Realize();
-        root->Add(buttons, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxALIGN_RIGHT, 10);
-
-        SetSizerAndFit(root);
-        SetMinSize(wxSize(680, 460));
-
-        refreshButton_->Bind(wxEVT_BUTTON, &BitbucketLoadDialog::OnRefresh, this);
-        branchChoice_->Bind(wxEVT_CHOICE, &BitbucketLoadDialog::OnBranchChanged, this);
-        fileList_->Bind(wxEVT_LISTBOX, [this](wxCommandEvent&) { UpdateOkEnabled(); });
-        okButton_->Bind(wxEVT_BUTTON, &BitbucketLoadDialog::OnOk, this);
-
-        StartLoadBranchesAndDefaultFiles();
-    }
-
-    ~BitbucketLoadDialog() override {
-        aliveFlag_->store(false);
-    }
-
-    std::string SelectedBranch() const {
-        return selectedBranch_;
-    }
-
-    std::string SelectedFile() const {
-        return selectedFile_;
-    }
-
-private:
-    void StartLoadBranchesAndDefaultFiles() {
-        const auto requestId = requestId_.fetch_add(1) + 1;
-        SetBusyState(true, "Loading branches from Bitbucket...");
-
-        auto alive = aliveFlag_;
-        std::thread([this, alive, requestId]() {
-            std::vector<std::string> branches;
-            std::string error;
-            const auto ok = client_.ListBranches(repoUrl_, branches, error);
-
-            wxTheApp->CallAfter([this, alive, requestId, ok, branches = std::move(branches), error = std::move(error)]() mutable {
-                if (!alive->load() || requestId != requestId_.load()) {
-                    return;
-                }
-
-                if (!ok) {
-                    SetBusyState(false, "");
-                    wxMessageBox(error, "Bitbucket error", wxOK | wxICON_ERROR, this);
-                    return;
-                }
-
-                branchChoice_->Clear();
-                for (const auto& branch : branches) {
-                    branchChoice_->Append(branch);
-                }
-
-                int selectedIndex = wxNOT_FOUND;
-                for (unsigned int i = 0; i < branchChoice_->GetCount(); ++i) {
-                    if (branchChoice_->GetString(i) == "master") {
-                        selectedIndex = static_cast<int>(i);
-                        break;
-                    }
-                }
-                if (selectedIndex == wxNOT_FOUND && branchChoice_->GetCount() > 0) {
-                    selectedIndex = 0;
-                }
-                if (selectedIndex != wxNOT_FOUND) {
-                    branchChoice_->SetSelection(selectedIndex);
-                }
-
-                SetBusyState(false, "");
-                if (branchChoice_->GetSelection() != wxNOT_FOUND) {
-                    StartRefreshFilesForSelectedBranch();
-                    return;
-                }
-                statusLabel_->SetLabelText("No branches available for this repository.");
-            });
-        }).detach();
-    }
-
-    void StartRefreshFilesForSelectedBranch() {
-        const auto branch = branchChoice_->GetStringSelection().ToStdString();
-        if (branch.empty()) {
-            fileList_->Clear();
-            UpdateOkEnabled();
-            return;
-        }
-
-        const auto requestId = requestId_.fetch_add(1) + 1;
-        fileList_->Clear();
-        SetBusyState(true, "Loading XML files from Bitbucket...");
-
-        auto alive = aliveFlag_;
-        std::thread([this, alive, requestId, branch]() {
-            std::vector<std::string> files;
-            std::string error;
-            const auto ok = client_.ListTopLevelXmlFiles(repoUrl_, branch, files, error);
-
-            wxTheApp->CallAfter([this,
-                                 alive,
-                                 requestId,
-                                 branch,
-                                 ok,
-                                 files = std::move(files),
-                                 error = std::move(error)]() mutable {
-                if (!alive->load() || requestId != requestId_.load()) {
-                    return;
-                }
-
-                if (!ok) {
-                    SetBusyState(false, "");
-                    wxMessageBox(error, "Bitbucket error", wxOK | wxICON_ERROR, this);
-                    return;
-                }
-
-                fileList_->Clear();
-                for (const auto& file : files) {
-                    fileList_->Append(file);
-                }
-                if (!files.empty()) {
-                    fileList_->SetSelection(0);
-                }
-
-                SetBusyState(false, "");
-                UpdateOkEnabled();
-                statusLabel_->SetLabelText(wxString::Format("Found %u XML file(s) in branch '%s'.",
-                                                            fileList_->GetCount(),
-                                                            branch));
-            });
-        }).detach();
-    }
-
-    void OnRefresh(wxCommandEvent&) {
-        StartLoadBranchesAndDefaultFiles();
-    }
-
-    void OnBranchChanged(wxCommandEvent&) {
-        StartRefreshFilesForSelectedBranch();
-    }
-
-    void OnOk(wxCommandEvent& event) {
-        if (branchChoice_->GetSelection() == wxNOT_FOUND || fileList_->GetSelection() == wxNOT_FOUND) {
-            event.Skip();
-            return;
-        }
-
-        selectedBranch_ = branchChoice_->GetStringSelection().ToStdString();
-        selectedFile_ = fileList_->GetStringSelection().ToStdString();
-        event.Skip();
-    }
-
-    void SetBusyState(bool busy, const wxString& message) {
-        branchChoice_->Enable(!busy);
-        fileList_->Enable(!busy);
-        refreshButton_->Enable(!busy);
-        okButton_->Enable(!busy && fileList_->GetSelection() != wxNOT_FOUND &&
-                          branchChoice_->GetSelection() != wxNOT_FOUND);
-        if (busy) {
-            statusLabel_->SetLabelText(message);
-        }
-    }
-
-    void UpdateOkEnabled() {
-        okButton_->Enable(fileList_->GetSelection() != wxNOT_FOUND && branchChoice_->GetSelection() != wxNOT_FOUND);
-    }
-
-    confy::BitbucketClient& client_;
-    std::string repoUrl_;
-    wxChoice* branchChoice_{nullptr};
-    wxListBox* fileList_{nullptr};
-    wxStaticText* statusLabel_{nullptr};
-    wxButton* refreshButton_{nullptr};
-    wxButton* okButton_{nullptr};
-    std::string selectedBranch_;
-    std::string selectedFile_;
-    std::atomic<std::uint64_t> requestId_{0};
-    std::shared_ptr<std::atomic<bool>> aliveFlag_{std::make_shared<std::atomic<bool>>(true)};
-};
-
 }  // namespace
 
 namespace confy {
 
-MainFrame::MainFrame()
-    : wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(900, 600)) {
+MainFrame::MainFrame(const wxString& initialConfigPath, std::function<void()> onReturnToPicker)
+        : wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(900, 600)),
+            onReturnToPicker_(std::move(onReturnToPicker)) {
     CreateStatusBar(1);
     SetStatusText("Config: none");
 
     auto* fileMenu = new wxMenu();
-    fileMenu->Append(kIdLoadConfig, "&Load Config...\tCtrl+O");
-    fileMenu->Append(kIdLoadLastConfig, "Load &Last");
-    fileMenu->Append(kIdLoadFromBitbucket, "Load from &Bitbucket...");
+        fileMenu->Append(kIdCloseConfig, "&Close\tCtrl+W");
+        fileMenu->Append(kIdReloadConfig, "&Reload\tCtrl+R");
+        fileMenu->AppendSeparator();
     fileMenu->Append(kIdSaveAs, "Save &As...\tCtrl+Shift+S");
     fileMenu->AppendSeparator();
     fileMenu->Append(wxID_EXIT, "E&xit");
@@ -336,50 +96,14 @@ MainFrame::MainFrame()
 
     componentScroll_ = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
     componentScroll_->SetScrollRate(0, 6);
-    componentScroll_->ShowScrollbars(wxSHOW_SB_NEVER, wxSHOW_SB_DEFAULT);
 
+    componentContentPanel_ = new wxPanel(componentScroll_);
     componentListSizer_ = new wxBoxSizer(wxVERTICAL);
-    componentScroll_->SetSizer(componentListSizer_);
+    componentContentPanel_->SetSizer(componentListSizer_);
 
-    emptyStatePanel_ = new wxPanel(componentScroll_);
-    auto* emptyStateSizer = new wxBoxSizer(wxVERTICAL);
-    emptyStateSizer->AddStretchSpacer();
-
-    loadConfigButton_ = new wxButton(emptyStatePanel_, kIdLoadConfig, "Load config XML");
-    auto buttonFont = loadConfigButton_->GetFont();
-    buttonFont.MakeLarger();
-    loadConfigButton_->SetFont(buttonFont);
-    loadConfigButton_->SetMinSize(wxSize(280, 72));
-    emptyStateSizer->Add(loadConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL);
-
-    loadLastConfigButton_ = new wxButton(emptyStatePanel_, kIdLoadLastConfig, "Load Last");
-    loadLastConfigButton_->SetMinSize(wxSize(280, 36));
-    loadLastConfigButton_->Hide();
-    emptyStateSizer->Add(loadLastConfigButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 12);
-
-    loadFromBitbucketButton_ = new wxButton(emptyStatePanel_, kIdLoadFromBitbucket, "Load from Bitbucket");
-    loadFromBitbucketButton_->SetMinSize(wxSize(280, 36));
-    emptyStateSizer->Add(loadFromBitbucketButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 8);
-
-    wxString lastPath(AppSettings::Get().GetLastConfigPath());
-    if (!lastPath.empty()) {
-        loadLastConfigButton_->SetToolTip(lastPath);
-        loadLastConfigButton_->Show();
-    }
-
-    const auto xmlRepoUrl = AppSettings::Get().GetXmlRepoUrl();
-    if (xmlRepoUrl.empty()) {
-        loadFromBitbucketButton_->Disable();
-        loadFromBitbucketButton_->SetToolTip("No XmlRepoUrl configured");
-    } else {
-        loadFromBitbucketButton_->Enable();
-        loadFromBitbucketButton_->UnsetToolTip();
-    }
-
-    emptyStateSizer->AddStretchSpacer();
-    emptyStatePanel_->SetSizer(emptyStateSizer);
-
-    componentListSizer_->Add(emptyStatePanel_, 1, wxEXPAND);
+    auto* scrollSizer = new wxBoxSizer(wxVERTICAL);
+    scrollSizer->Add(componentContentPanel_, 1, wxEXPAND);
+    componentScroll_->SetSizer(scrollSizer);
 
     rootSizer->Add(componentScroll_, 1, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
 
@@ -389,148 +113,56 @@ MainFrame::MainFrame()
 
     SetSizer(rootSizer);
 
-    Bind(wxEVT_MENU, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
-    Bind(wxEVT_MENU, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
-    Bind(wxEVT_MENU, &MainFrame::OnLoadFromBitbucket, this, kIdLoadFromBitbucket);
-    Bind(wxEVT_BUTTON, &MainFrame::OnLoadConfig, this, kIdLoadConfig);
-    Bind(wxEVT_BUTTON, &MainFrame::OnLoadLastConfig, this, kIdLoadLastConfig);
-    Bind(wxEVT_BUTTON, &MainFrame::OnLoadFromBitbucket, this, kIdLoadFromBitbucket);
+    Bind(wxEVT_MENU, &MainFrame::OnCloseConfig, this, kIdCloseConfig);
+    Bind(wxEVT_MENU, &MainFrame::OnReloadConfig, this, kIdReloadConfig);
     Bind(wxEVT_MENU, &MainFrame::OnSaveAs, this, kIdSaveAs);
     Bind(wxEVT_MENU, &MainFrame::OnSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_MENU, &MainFrame::OnDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_MENU, &MainFrame::OnCopyConfig, this, kIdCopyConfig);
     Bind(wxEVT_MENU, &MainFrame::OnToggleDebugConsole, this, kIdViewDebugConsole);
-    Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
+    Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
+    Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnCloseWindow, this);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSaveAs, this, kIdSaveAs);
-    Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateLoadLastConfig, this, kIdLoadLastConfig);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateSelectAll, this, wxID_SELECTALL);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDeselectAll, this, kIdDeselectAll);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateCopyConfig, this, kIdCopyConfig);
     Bind(wxEVT_UPDATE_UI, &MainFrame::OnUpdateDebugConsole, this, kIdViewDebugConsole);
     Bind(wxEVT_BUTTON, &MainFrame::OnApply, this, kIdApply);
+    Bind(wxEVT_SIZE, &MainFrame::OnFrameSize, this);
 
-    RelayoutComponentArea();
-    SyncComponentAreaVirtualSize();
+    if (!LoadConfigFromPath(initialConfigPath)) {
+        CallAfter([this]() { Close(); });
+    }
 }
 
 MainFrame::~MainFrame() {
     StopMetadataWorkers();
 }
 
-void MainFrame::OnLoadConfig(wxCommandEvent&) {
-    wxString initialDirectory;
-    const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
-    if (!executablePath.empty()) {
-        wxFileName executableFile(executablePath);
-        if (executableFile.IsOk()) {
-            initialDirectory = executableFile.GetPath();
-        }
-    }
-
-    wxFileDialog dialog(this,
-                        "Open config XML",
-                        initialDirectory,
-                        "",
-                        "XML files (*.xml)|*.xml|All files (*.*)|*.*",
-                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-    if (dialog.ShowModal() != wxID_OK) {
-        return;
-    }
-
-    LoadConfigFromPath(dialog.GetPath());
+void MainFrame::OnCloseConfig(wxCommandEvent&) {
+    Close();
 }
 
-void MainFrame::OnLoadLastConfig(wxCommandEvent&) {
-    const auto lastPath = AppSettings::Get().GetLastConfigPath();
-    if (lastPath.empty()) {
+void MainFrame::OnReloadConfig(wxCommandEvent&) {
+    if (loadedConfigPath_.empty()) {
         return;
     }
-    LoadConfigFromPath(wxString(lastPath));
+    LoadConfigFromPath(wxString(loadedConfigPath_));
 }
 
-void MainFrame::OnLoadFromBitbucket(wxCommandEvent&) {
-    wxLogMessage("[bitbucket] UI action: Load from Bitbucket clicked");
-    const auto repoUrl = AppSettings::Get().GetXmlRepoUrl();
-    if (repoUrl.empty()) {
-        wxLogError("[bitbucket] Missing /XmlRepoUrl in confy.conf");
-        wxMessageBox("Missing XML repo in confy.conf. Set /XmlRepoUrl before using Load from Bitbucket.",
-                     "Bitbucket",
-                     wxOK | wxICON_ERROR,
-                     this);
-        return;
+void MainFrame::OnExit(wxCommandEvent&) {
+    exitRequested_ = true;
+    if (wxTheApp) {
+        wxTheApp->ExitMainLoop();
     }
-    wxLogMessage("[bitbucket] Using configured repo url=%s", repoUrl.c_str());
+    Close(true);
+}
 
-    const auto settingsPath = ResolveM2SettingsPath();
-    if (settingsPath.empty()) {
-        wxLogError("[bitbucket] Unable to resolve m2 settings path");
-        wxMessageBox("Unable to resolve home directory for ~/.m2/settings.xml.",
-                     "Bitbucket auth",
-                     wxOK | wxICON_ERROR,
-                     this);
-        return;
+void MainFrame::OnCloseWindow(wxCloseEvent& event) {
+    if (!exitRequested_ && onReturnToPicker_) {
+        onReturnToPicker_();
     }
-    wxLogMessage("[bitbucket] Loading credentials from %s", settingsPath.c_str());
-
-    AuthCredentials credentials;
-    std::string authError;
-    if (!credentials.LoadFromM2SettingsXml(settingsPath, authError)) {
-        wxLogError("[bitbucket] Failed loading credentials: %s", authError.c_str());
-        wxMessageBox(wxString("Unable to load Maven credentials: ") + authError,
-                     "Bitbucket auth",
-                     wxOK | wxICON_ERROR,
-                     this);
-        return;
-    }
-    wxLogMessage("[bitbucket] Credentials loaded from m2 settings");
-
-    BitbucketClient client(std::move(credentials));
-    BitbucketLoadDialog dialog(this, client, repoUrl);
-    if (dialog.ShowModal() != wxID_OK) {
-        wxLogMessage("[bitbucket] User canceled Bitbucket file selection dialog");
-        return;
-    }
-
-    const auto branch = dialog.SelectedBranch();
-    const auto filePath = dialog.SelectedFile();
-    if (repoUrl.empty() || branch.empty() || filePath.empty()) {
-        wxLogError("[bitbucket] Missing selection after dialog repo=%s branch=%s file=%s",
-                   repoUrl.c_str(),
-                   branch.c_str(),
-                   filePath.c_str());
-        wxMessageBox("Missing repository, branch, or XML file selection.",
-                     "Bitbucket",
-                     wxOK | wxICON_ERROR,
-                     this);
-        return;
-    }
-    wxLogMessage("[bitbucket] Selected branch=%s file=%s", branch.c_str(), filePath.c_str());
-
-    const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
-    wxFileName executableFile(executablePath);
-    wxString outputPath;
-    if (executableFile.IsOk()) {
-        outputPath = executableFile.GetPathWithSep() + "from_bitbucket.xml";
-    } else {
-        outputPath = wxFileName::GetCwd() + wxFILE_SEP_PATH + "from_bitbucket.xml";
-    }
-
-    wxBusyCursor busyCursor;
-    SetStatusText("Downloading XML from Bitbucket...");
-    wxYieldIfNeeded();
-
-    std::string downloadError;
-    if (!client.DownloadFile(repoUrl, branch, filePath, outputPath.ToStdString(), downloadError)) {
-        wxLogError("[bitbucket] Download failed: %s", downloadError.c_str());
-        SetStatusText("Config: none");
-        wxMessageBox(downloadError, "Bitbucket download failed", wxOK | wxICON_ERROR, this);
-        return;
-    }
-    wxLogMessage("[bitbucket] Download completed to %s", outputPath.ToStdString().c_str());
-
-    SetStatusText("Loading downloaded XML...");
-    wxYieldIfNeeded();
-    LoadConfigFromPath(outputPath);
+    event.Skip();
 }
 
 void MainFrame::OnSaveAs(wxCommandEvent&) {
@@ -580,18 +212,19 @@ void MainFrame::OnSaveAs(wxCommandEvent&) {
     SetStatusText(wxString::Format("Config: %s", loadedConfigPath_));
 }
 
-void MainFrame::LoadConfigFromPath(const wxString& path) {
+bool MainFrame::LoadConfigFromPath(const wxString& path) {
     ConfigLoader loader;
     auto result = loader.LoadFromFile(path.ToStdString());
     if (!result.success) {
         wxMessageBox(result.errorMessage, "Config load failed", wxOK | wxICON_ERROR, this);
-        return;
+        return false;
     }
 
     config_ = std::move(result.config);
     loadedConfigPath_ = path.ToStdString();
     AppSettings::Get().SetLastConfigPath(loadedConfigPath_);
     RenderConfig();
+    return true;
 }
 
 void MainFrame::OnApply(wxCommandEvent&) {
@@ -685,10 +318,6 @@ void MainFrame::OnUpdateSaveAs(wxUpdateUIEvent& event) {
     event.Enable(!config_.components.empty());
 }
 
-void MainFrame::OnUpdateLoadLastConfig(wxUpdateUIEvent& event) {
-    event.Enable(!AppSettings::Get().GetLastConfigPath().empty());
-}
-
 void MainFrame::OnCopyConfig(wxCommandEvent&) {
     const auto summary = BuildHumanReadableConfigSummary(config_);
     if (summary.empty()) {
@@ -722,31 +351,21 @@ void MainFrame::OnUpdateDebugConsole(wxUpdateUIEvent& event) {
     event.Check(IsDebugConsoleVisible());
 }
 
-void MainFrame::RelayoutComponentArea() {
-    componentScroll_->Layout();
+void MainFrame::OnFrameSize(wxSizeEvent& event) {
+    event.Skip();
+    RelayoutComponentArea();
 }
 
-void MainFrame::SyncComponentAreaVirtualSize() {
-    if (componentListSizer_ == nullptr || componentScroll_ == nullptr) {
-        return;
-    }
-
-    const int viewportWidth = std::max(1, componentScroll_->GetClientSize().GetWidth());
-    const int contentHeight = std::max(1, componentListSizer_->CalcMin().GetHeight());
-    componentScroll_->SetVirtualSize(viewportWidth, contentHeight);
+void MainFrame::RelayoutComponentArea() {
+    componentContentPanel_->Layout();
+    componentScroll_->Layout();
+    componentScroll_->FitInside();
 }
 
 void MainFrame::RenderConfig() {
     StopMetadataWorkers();
-    Freeze();
-    componentScroll_->Freeze();
-
     uiUpdating_ = true;
     componentListSizer_->Clear(true);
-    emptyStatePanel_ = nullptr;
-    loadConfigButton_ = nullptr;
-    loadLastConfigButton_ = nullptr;
-    loadFromBitbucketButton_ = nullptr;
     rows_.clear();
     rows_.reserve(config_.components.size());
     metadataState_.clear();
@@ -763,7 +382,6 @@ void MainFrame::RenderConfig() {
     }
 
     RelayoutComponentArea();
-    SyncComponentAreaVirtualSize();
     uiUpdating_ = false;
 
     statusLabel_->SetLabelText(wxString::Format("Loaded %zu component(s)", config_.components.size()));
@@ -775,9 +393,6 @@ void MainFrame::RenderConfig() {
     }
     applyButton_->Enable(!config_.components.empty());
     Layout();
-
-    componentScroll_->Thaw();
-    Thaw();
 
     StartMetadataWorkers();
     for (std::size_t i = 0; i < config_.components.size(); ++i) {
@@ -794,21 +409,10 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     auto& component = config_.components[componentIndex];
 
     const auto displayName = component.displayName;
-    auto* rowPanel = new wxPanel(componentScroll_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_THEME);
-    auto* rowContainer = new wxBoxSizer(wxVERTICAL);
-    rowPanel->SetSizer(rowContainer);
-
-    auto* titleLabel = new wxStaticText(rowPanel,
-                                        wxID_ANY,
+    auto* rowBox = new wxStaticBoxSizer(wxVERTICAL,
+                                        componentContentPanel_,
                                         wxString::Format("%s  (%s)", displayName, component.path));
-    {
-        auto titleFont = titleLabel->GetFont();
-        titleFont.SetWeight(wxFONTWEIGHT_BOLD);
-        titleLabel->SetFont(titleFont);
-    }
-    rowContainer->Add(titleLabel, 0, wxLEFT | wxRIGHT | wxTOP | wxEXPAND, 8);
-
-    auto* rowParent = rowPanel;
+    auto* rowParent = rowBox->GetStaticBox();
 
     auto* detailsSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -841,8 +445,8 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
     artifactRow->Add(artifactBuildType, 1, wxRIGHT | wxEXPAND, 0);
     detailsSizer->Add(artifactRow, 0, wxEXPAND);
 
-    rowContainer->Add(detailsSizer, 1, wxALL | wxEXPAND, 8);
-    componentListSizer_->Add(rowPanel, 0, wxBOTTOM | wxEXPAND, 6);
+    rowBox->Add(detailsSizer, 1, wxEXPAND);
+    componentListSizer_->Add(rowBox, 0, wxBOTTOM | wxEXPAND, 6);
 
     ComponentRowWidgets row;
     row.sourceEnabled = sourceEnabled;
@@ -946,7 +550,6 @@ void MainFrame::AddComponentRow(std::size_t componentIndex) {
 
 void MainFrame::UpdateComboTooltip(wxComboBox& comboBox) {
     const auto value = comboBox.GetValue();
-
     if (value.empty()) {
         comboBox.UnsetToolTip();
         return;
