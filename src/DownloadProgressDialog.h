@@ -29,6 +29,7 @@ class DownloadProgressDialog final : public wxDialog
    {
       Queued,
       Running,
+      PostDownloadScriptRunning,
       Completed,
       Failed,
       Cancelled,

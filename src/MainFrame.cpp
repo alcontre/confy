@@ -61,8 +61,9 @@ bool HasArtifact(const confy::ComponentConfig &component)
 
 namespace confy {
 
-MainFrame::MainFrame(const wxString &initialConfigPath, std::function<void()> onReturnToPicker) : wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(900, 600)),
-                                                                                                  onReturnToPicker_(std::move(onReturnToPicker))
+MainFrame::MainFrame(const wxString &initialConfigPath, std::function<void()> onReturnToPicker) :
+    wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(900, 600)),
+    onReturnToPicker_(std::move(onReturnToPicker))
 {
    CreateStatusBar(1);
    SetStatusText("Config: none");

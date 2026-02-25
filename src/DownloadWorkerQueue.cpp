@@ -68,7 +68,8 @@ int DecodeExitCode(int rawExitCode)
 
 } // namespace
 
-DownloadWorkerQueue::DownloadWorkerQueue(std::size_t workerCount) : workerCount_(workerCount == 0 ? 1 : workerCount) {}
+DownloadWorkerQueue::DownloadWorkerQueue(std::size_t workerCount) :
+    workerCount_(workerCount == 0 ? 1 : workerCount) {}
 
 DownloadWorkerQueue::~DownloadWorkerQueue()
 {
@@ -339,6 +340,13 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob &job)
       return;
    }
 
+   PushEvent({job.jobId,
+       job.componentIndex,
+       DownloadEventType::PostDownloadScriptRunning,
+       100,
+       0,
+       "Running post-download script"});
+
    std::string scriptError;
    if (!ExecutePostDownloadScript(job.postDownloadScript, job.targetDirectory, scriptError)) {
       wxLogError("[download-worker] script failed jobId=%llu error='%s'",
@@ -442,6 +450,13 @@ void DownloadWorkerQueue::ProcessJob(const DownloadJob &job)
       }
       return;
    }
+
+   PushEvent({source.jobId,
+       source.componentIndex,
+       DownloadEventType::PostDownloadScriptRunning,
+       100,
+       0,
+       "Running post-download script"});
 
    std::string scriptError;
    if (!ExecutePostDownloadScript(source.postDownloadScript, source.targetDirectory, scriptError)) {

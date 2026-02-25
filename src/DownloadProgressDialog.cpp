@@ -295,6 +295,9 @@ void DownloadProgressDialog::ConsumeWorkerEvents()
                 true,
                 event.downloadedBytes);
             break;
+         case DownloadEventType::PostDownloadScriptRunning:
+            SetRowState(event.jobId, RowState::PostDownloadScriptRunning, "Running post-download script", 100);
+            break;
          case DownloadEventType::Completed:
             SetRowState(event.jobId, RowState::Completed, "Completed", 100);
             break;
@@ -397,7 +400,8 @@ void DownloadProgressDialog::QueueRetry(std::uint64_t jobId)
 bool DownloadProgressDialog::HasActiveJobs() const
 {
    for (const auto &row : rows_) {
-      if (row.state == RowState::Queued || row.state == RowState::Running) {
+      if (row.state == RowState::Queued || row.state == RowState::Running ||
+          row.state == RowState::PostDownloadScriptRunning) {
          return true;
       }
    }

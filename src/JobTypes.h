@@ -77,6 +77,7 @@ enum class DownloadEventType
 {
    Started,
    Progress,
+   PostDownloadScriptRunning,
    Completed,
    Failed,
    Cancelled,
