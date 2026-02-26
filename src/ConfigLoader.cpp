@@ -105,6 +105,20 @@ bool ValidateRegexFilters(const std::vector<std::string> &filters,
    return true;
 }
 
+std::string ExpandComponentPathMacro(const std::string &componentPath, const std::string &rootPath)
+{
+   constexpr const char *kPathMacro = "%PATH%";
+   std::string expanded             = componentPath;
+
+   std::size_t start = 0;
+   while ((start = expanded.find(kPathMacro, start)) != std::string::npos) {
+      expanded.replace(start, std::char_traits<char>::length(kPathMacro), rootPath);
+      start += rootPath.size();
+   }
+
+   return expanded;
+}
+
 } // namespace
 
 namespace confy {
@@ -153,7 +167,7 @@ LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
             if (component.displayName.empty()) {
                component.displayName = component.name;
             }
-            component.path = GetChildValueCI(node, "path");
+            component.path = ExpandComponentPathMacro(GetChildValueCI(node, "path"), model.rootPath);
 
             auto *sourceNode = FindChildCI(node, "source");
             if (sourceNode) {

@@ -5,7 +5,7 @@
         <Component>
             <name>my_name</name>
             <DisplayName>My Name is very very very very very very long</DisplayName>
-            <Path>componentA</Path>
+            <Path>%PATH%/componentA</Path>
             <Source>
                 <IsEnabled/>
                 <url>https://bitbucket.example.com/project/myrepo.git</url>

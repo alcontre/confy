@@ -87,6 +87,8 @@ The config file is an XML document that describes where your components live and
             <DisplayName>My Component</DisplayName>
             <!-- Subdirectory under <path> where this component is placed -->
             <Path>my_component</Path>
+            <!-- You can also use %PATH% to inject the top-level <path> value -->
+            <!-- Example: <Path>%PATH%/my_component</Path> -->
 
             <!-- Source: clone from a Git / Bitbucket repository -->
             <Source>
@@ -131,12 +133,14 @@ The config file is an XML document that describes where your components live and
 
 See the [`samples/`](samples/) directory for ready-to-use example config files.
 
+`<Component>/<Path>` is treated as relative to `<path>` by default. If `<Component>/<Path>` is absolute, it is used as-is. `%PATH%` is supported as a macro and is expanded to the top-level `<path>` value when the config is loaded.
+
 ### Key XML elements
 
 | Element | Description |
 |---|---|
-| `<path>` | Absolute path to the root download directory |
-| `<Component>/<Path>` | Subdirectory (relative to `<path>`) for this component |
+| `<path>` | Base download directory on your machine (use an absolute path for predictable results) |
+| `<Component>/<Path>` | Component target path: relative paths are resolved under `<path>`, absolute paths are used as-is; supports `%PATH%` to expand to top-level `<path>` |
 | `<IsEnabled/>` | Self-closing tag — marks a Source or Artifact as enabled by default |
 | `<BranchOrTag>` | Git branch or tag to clone |
 | `<NoShallow/>` | Opt out of shallow clone (full history) |
