@@ -20,10 +20,12 @@
 #include <wx/utils.h>
 
 #include <atomic>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -78,7 +80,12 @@ class BitbucketLoadDialog final : public wxDialog
       branchRow->Add(refreshButton_, 0, wxLEFT, 8);
       root->Add(branchRow, 0, wxALL | wxEXPAND, 10);
 
-      root->Add(new wxStaticText(this, wxID_ANY, "XML files"), 0, wxLEFT | wxRIGHT, 10);
+      auto *filesRow = new wxBoxSizer(wxHORIZONTAL);
+      filesRow->Add(new wxStaticText(this, wxID_ANY, "XML files"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+      filesRow->AddStretchSpacer();
+      sortButton_ = new wxButton(this, wxID_ANY, "");
+      filesRow->Add(sortButton_, 0);
+      root->Add(filesRow, 0, wxLEFT | wxRIGHT, 10);
       fileList_ = new wxListBox(this, wxID_ANY);
       root->Add(fileList_, 1, wxALL | wxEXPAND, 10);
 
@@ -99,7 +106,9 @@ class BitbucketLoadDialog final : public wxDialog
       refreshButton_->Bind(wxEVT_BUTTON, &BitbucketLoadDialog::OnRefresh, this);
       branchChoice_->Bind(wxEVT_CHOICE, &BitbucketLoadDialog::OnBranchChanged, this);
       fileList_->Bind(wxEVT_LISTBOX, [this](wxCommandEvent &) { UpdateOkEnabled(); });
+      sortButton_->Bind(wxEVT_BUTTON, &BitbucketLoadDialog::OnToggleSort, this);
       okButton_->Bind(wxEVT_BUTTON, &BitbucketLoadDialog::OnOk, this);
+      UpdateSortButtonLabel();
 
       StartLoadBranchesAndDefaultFiles();
    }
@@ -175,12 +184,14 @@ class BitbucketLoadDialog final : public wxDialog
    {
       const auto branch = branchChoice_->GetStringSelection().ToStdString();
       if (branch.empty()) {
+         currentFiles_.clear();
          fileList_->Clear();
          UpdateOkEnabled();
          return;
       }
 
       const auto requestId = requestId_.fetch_add(1) + 1;
+      currentFiles_.clear();
       fileList_->Clear();
       SetBusyState(true, "Loading XML files from Bitbucket...");
 
@@ -207,18 +218,13 @@ class BitbucketLoadDialog final : public wxDialog
                return;
             }
 
-            fileList_->Clear();
-            for (const auto &file : files) {
-               fileList_->Append(file);
-            }
-            if (!files.empty()) {
-               fileList_->SetSelection(0);
-            }
+            currentFiles_ = std::move(files);
+            RenderFileList();
 
             SetBusyState(false, "");
             UpdateOkEnabled();
             statusLabel_->SetLabelText(wxString::Format("Found %u XML file(s) in branch '%s'.",
-                fileList_->GetCount(),
+                static_cast<unsigned int>(currentFiles_.size()),
                 branch));
          });
       }).detach();
@@ -232,6 +238,17 @@ class BitbucketLoadDialog final : public wxDialog
    void OnBranchChanged(wxCommandEvent &)
    {
       StartRefreshFilesForSelectedBranch();
+   }
+
+   void OnToggleSort(wxCommandEvent &)
+   {
+      const auto selected = fileList_->GetSelection() != wxNOT_FOUND
+                                ? fileList_->GetStringSelection().ToStdString()
+                                : std::string();
+      sortAscending_ = !sortAscending_;
+      UpdateSortButtonLabel();
+      RenderFileList(selected);
+      UpdateOkEnabled();
    }
 
    void OnOk(wxCommandEvent &event)
@@ -248,9 +265,11 @@ class BitbucketLoadDialog final : public wxDialog
 
    void SetBusyState(bool busy, const wxString &message)
    {
+      busy_ = busy;
       branchChoice_->Enable(!busy);
       fileList_->Enable(!busy);
       refreshButton_->Enable(!busy);
+      sortButton_->Enable(!busy && !currentFiles_.empty());
       okButton_->Enable(!busy && fileList_->GetSelection() != wxNOT_FOUND &&
                         branchChoice_->GetSelection() != wxNOT_FOUND);
       if (busy) {
@@ -260,7 +279,43 @@ class BitbucketLoadDialog final : public wxDialog
 
    void UpdateOkEnabled()
    {
-      okButton_->Enable(fileList_->GetSelection() != wxNOT_FOUND && branchChoice_->GetSelection() != wxNOT_FOUND);
+      sortButton_->Enable(!busy_ && !currentFiles_.empty());
+      okButton_->Enable(!busy_ && fileList_->GetSelection() != wxNOT_FOUND &&
+                        branchChoice_->GetSelection() != wxNOT_FOUND);
+   }
+
+   void UpdateSortButtonLabel()
+   {
+      sortButton_->SetLabel(sortAscending_ ? "Sort ↑" : "Sort ↓");
+      sortButton_->SetToolTip(sortAscending_ ? "Ascending order" : "Descending order");
+   }
+
+   void RenderFileList(const std::string &preferredSelection = {})
+   {
+      std::vector<std::string> sortedFiles = currentFiles_;
+      std::sort(sortedFiles.begin(), sortedFiles.end());
+      if (!sortAscending_) {
+         std::reverse(sortedFiles.begin(), sortedFiles.end());
+      }
+
+      const auto selectionToPreserve = preferredSelection.empty() && fileList_->GetSelection() != wxNOT_FOUND
+                                           ? fileList_->GetStringSelection().ToStdString()
+                                           : preferredSelection;
+
+      fileList_->Clear();
+      int selectedIndex = wxNOT_FOUND;
+      for (std::size_t index = 0; index < sortedFiles.size(); ++index) {
+         fileList_->Append(sortedFiles[index]);
+         if (sortedFiles[index] == selectionToPreserve) {
+            selectedIndex = static_cast<int>(index);
+         }
+      }
+
+      if (selectedIndex != wxNOT_FOUND) {
+         fileList_->SetSelection(selectedIndex);
+      } else if (!sortedFiles.empty()) {
+         fileList_->SetSelection(0);
+      }
    }
 
    confy::BitbucketClient &client_;
@@ -269,9 +324,13 @@ class BitbucketLoadDialog final : public wxDialog
    wxListBox *fileList_{nullptr};
    wxStaticText *statusLabel_{nullptr};
    wxButton *refreshButton_{nullptr};
+   wxButton *sortButton_{nullptr};
    wxButton *okButton_{nullptr};
    std::string selectedBranch_;
    std::string selectedFile_;
+   bool busy_{false};
+   bool sortAscending_{true};
+   std::vector<std::string> currentFiles_;
    std::atomic<std::uint64_t> requestId_{0};
    std::shared_ptr<std::atomic<bool>> aliveFlag_{std::make_shared<std::atomic<bool>>(true)};
 };
