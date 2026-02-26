@@ -1,6 +1,6 @@
 # confy
 
-**confy** is a cross-platform desktop application that lets you define a set of software components in a single XML configuration file and then download all of them — source code from Bitbucket and/or pre-built artifacts from Nexus — with a few clicks.
+**confy** is a cross-platform desktop application that lets you define a set of software components in a single XML configuration file and then download all of them -- source code from Bitbucket and/or pre-built artifacts from Nexus -- with a few clicks.
 
 ---
 
@@ -50,14 +50,14 @@ Then run the app:
 
 ### 1. Open a config file
 
-Launch confy and choose **File → Load Config…** to open an XML config file (see [Config file format](#config-file-format) below). The app remembers the last loaded file across sessions.
+Launch confy and choose **File -> Load Config...** to open an XML config file (see [Config file format](#config-file-format) below). The app remembers the last loaded file across sessions.
 
 ### 2. Review the component list
 
 The main window shows a checklist of all components defined in the config. Each component can have:
 
-- a **Source** section — clones a Git repository
-- an **Artifact** section — downloads binaries from a Nexus raw repository
+- a **Source** section -- clones a Git repository
+- an **Artifact** section -- downloads binaries from a Nexus raw repository
 - or **both**
 
 Use the checkboxes to select only the components you want to download.
@@ -68,7 +68,7 @@ For each enabled Source entry, use the branch/tag dropdown to pick the exact ref
 
 ### 4. Apply
 
-Click **Apply** to start downloading. A progress dialog shows live status for every component. Network requests run in the background so the UI remains responsive. Progress and any errors are also visible in **View → Debug Console**.
+Click **Apply** to start downloading. A progress dialog shows live status for every component. Network requests run in the background so the UI remains responsive. Progress and any errors are also visible in **View -> Debug Console**.
 
 ---
 
@@ -141,7 +141,7 @@ See the [`samples/`](samples/) directory for ready-to-use example config files.
 |---|---|
 | `<path>` | Base download directory on your machine (use an absolute path for predictable results) |
 | `<Component>/<Path>` | Component target path: relative paths are resolved under `<path>`, absolute paths are used as-is; supports `%PATH%` to expand to top-level `<path>` |
-| `<IsEnabled/>` | Self-closing tag — marks a Source or Artifact as enabled by default |
+| `<IsEnabled/>` | Self-closing tag -- marks a Source or Artifact as enabled by default |
 | `<BranchOrTag>` | Git branch or tag to clone |
 | `<NoShallow/>` | Opt out of shallow clone (full history) |
 | `<version>` | Artifact version string |
@@ -153,9 +153,9 @@ See the [`samples/`](samples/) directory for ready-to-use example config files.
 
 ## Troubleshooting
 
-- **Components not appearing** — check that the XML is valid and that `<IsEnabled/>` is present inside the `<Source>` or `<Artifact>` block you want enabled.
-- **Authentication errors** — confy reads Bitbucket credentials from `~/.m2/settings.xml`. Make sure your server ID and credentials are configured there.
-- **View → Debug Console** — open the Debug Console for detailed logs of every network and git operation.
+- **Components not appearing** -- check that the XML is valid and that `<IsEnabled/>` is present inside the `<Source>` or `<Artifact>` block you want enabled.
+- **Authentication errors** -- confy reads Bitbucket credentials from `~/.m2/settings.xml`. Make sure your server ID and credentials are configured there.
+- **View -> Debug Console** -- open the Debug Console for detailed logs of every network and git operation.
 
 ---
 
