@@ -62,7 +62,9 @@ class DownloadProgressDialog final : public wxDialog
    void QueueRetry(std::uint64_t jobId);
    void UpdateDialogControls();
    bool HasActiveJobs() const;
-   bool HasFailedJobs() const;
+   bool HasRetriableJobs() const;
+   static bool IsActiveState(RowState state);
+   static bool IsRetriableState(RowState state);
 
    std::vector<DownloadJob> jobs_;
    std::vector<ProgressRow> rows_;

@@ -82,6 +82,25 @@ wxString BuildProgressStatus(wxStaticText *label,
 
 namespace confy {
 
+// Download dialog state machine (high-level):
+// - Non-terminal states: Queued -> Running -> PostDownloadScriptRunning.
+// - Terminal states: Completed, Failed, Cancelled.
+// - Retry policy: Failed and Cancelled are retriable; Completed is final.
+// - Control gating: row-level retries are disabled while active work exists;
+//   bulk retry can queue retriable rows at any time unless cancellation is
+//   currently in-flight.
+
+bool DownloadProgressDialog::IsActiveState(RowState state)
+{
+   return state == RowState::Queued || state == RowState::Running ||
+          state == RowState::PostDownloadScriptRunning;
+}
+
+bool DownloadProgressDialog::IsRetriableState(RowState state)
+{
+   return state == RowState::Failed || state == RowState::Cancelled;
+}
+
 DownloadProgressDialog::DownloadProgressDialog(wxWindow *parent, std::vector<DownloadJob> jobs) :
     wxDialog(parent,
         wxID_ANY,
@@ -171,7 +190,7 @@ DownloadProgressDialog::DownloadProgressDialog(wxWindow *parent, std::vector<Dow
    rootSizer->Add(rowsScrollWindow, 1, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
 
    auto *actionSizer  = new wxBoxSizer(wxHORIZONTAL);
-   retryFailedButton_ = new wxButton(this, wxID_ANY, "Retry Failed");
+   retryFailedButton_ = new wxButton(this, wxID_ANY, "Retry Incomplete");
    retryFailedButton_->Disable();
    actionSizer->Add(retryFailedButton_, 0, wxRIGHT, 8);
    actionSizer->AddStretchSpacer();
@@ -236,12 +255,12 @@ void DownloadProgressDialog::OnCancel(wxCommandEvent &)
 
 void DownloadProgressDialog::OnRetryFailed(wxCommandEvent &)
 {
-   if (cancelRequested_ || HasActiveJobs()) {
+   if (cancelRequested_) {
       return;
    }
 
    for (std::size_t i = 0; i < rows_.size(); ++i) {
-      if (rows_[i].state == RowState::Failed) {
+      if (IsRetriableState(rows_[i].state)) {
          QueueRetry(jobs_[i].JobId());
       }
    }
@@ -339,11 +358,6 @@ void DownloadProgressDialog::SetRowState(std::uint64_t jobId,
 
    auto &row = rows_[it->second];
 
-   if (row.statusLabel == nullptr || row.gauge == nullptr || row.retryButton == nullptr ||
-       row.detailLabel == nullptr) {
-      return;
-   }
-
    row.state = state;
    row.gauge->SetValue(std::clamp(percent, 0, 100));
 
@@ -372,10 +386,8 @@ void DownloadProgressDialog::SetRowState(std::uint64_t jobId,
       row.detailLabel->SetToolTip(detail);
    }
 
-   row.retryButton->Enable(state == RowState::Failed && !cancelRequested_);
-   if (row.container != nullptr) {
-      row.container->Layout();
-   }
+   row.retryButton->Enable(IsRetriableState(state) && !cancelRequested_ && !HasActiveJobs());
+   row.container->Layout();
 }
 
 void DownloadProgressDialog::QueueRetry(std::uint64_t jobId)
@@ -390,7 +402,7 @@ void DownloadProgressDialog::QueueRetry(std::uint64_t jobId)
    }
 
    auto &row = rows_[it->second];
-   if (row.state != RowState::Failed) {
+   if (!IsRetriableState(row.state)) {
       return;
    }
 
@@ -401,8 +413,7 @@ void DownloadProgressDialog::QueueRetry(std::uint64_t jobId)
 bool DownloadProgressDialog::HasActiveJobs() const
 {
    for (const auto &row : rows_) {
-      if (row.state == RowState::Queued || row.state == RowState::Running ||
-          row.state == RowState::PostDownloadScriptRunning) {
+      if (IsActiveState(row.state)) {
          return true;
       }
    }
@@ -410,10 +421,10 @@ bool DownloadProgressDialog::HasActiveJobs() const
    return false;
 }
 
-bool DownloadProgressDialog::HasFailedJobs() const
+bool DownloadProgressDialog::HasRetriableJobs() const
 {
    for (const auto &row : rows_) {
-      if (row.state == RowState::Failed) {
+      if (IsRetriableState(row.state)) {
          return true;
       }
    }
@@ -424,33 +435,27 @@ bool DownloadProgressDialog::HasFailedJobs() const
 void DownloadProgressDialog::UpdateDialogControls()
 {
    const bool active = HasActiveJobs();
+   // cancelRequested_ is only a transient lock while cancellation propagates.
+   // Once all rows become non-active, retries can be enabled again.
    if (!active && cancelRequested_) {
       cancelRequested_ = false;
    }
-   const bool failed = HasFailedJobs();
+   const bool hasRetriable = HasRetriableJobs();
 
    for (auto &row : rows_) {
-      if (row.retryButton != nullptr) {
-         row.retryButton->Enable(!cancelRequested_ && !active && row.state == RowState::Failed);
-      }
+      row.retryButton->Enable(!cancelRequested_ && !active && IsRetriableState(row.state));
    }
 
-   if (retryFailedButton_ != nullptr) {
-      retryFailedButton_->Enable(!cancelRequested_ && !active && failed);
-   }
+   retryFailedButton_->Enable(!cancelRequested_ && hasRetriable);
 
    if (active) {
-      if (cancelButton_ != nullptr) {
-         cancelButton_->SetLabel("Cancel");
-         cancelButton_->Enable(!cancelRequested_);
-      }
+      cancelButton_->SetLabel("Cancel");
+      cancelButton_->Enable(!cancelRequested_);
       return;
    }
 
-   if (cancelButton_ != nullptr) {
-      cancelButton_->SetLabel("Close");
-      cancelButton_->Enable(true);
-   }
+   cancelButton_->SetLabel("Close");
+   cancelButton_->Enable(true);
 }
 
 } // namespace confy

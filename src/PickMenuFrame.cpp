@@ -19,8 +19,8 @@
 #include <wx/stdpaths.h>
 #include <wx/utils.h>
 
-#include <atomic>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -62,9 +62,10 @@ class BitbucketLoadDialog final : public wxDialog
  public:
    BitbucketLoadDialog(wxWindow *parent,
        confy::BitbucketClient &client,
-       const std::string &repoUrl) : wxDialog(parent, wxID_ANY, "Load from Bitbucket", wxDefaultPosition, wxSize(680, 460)),
-                                     client_(client),
-                                     repoUrl_(repoUrl)
+       const std::string &repoUrl) :
+       wxDialog(parent, wxID_ANY, "Load from Bitbucket", wxDefaultPosition, wxSize(680, 460)),
+       client_(client),
+       repoUrl_(repoUrl)
    {
       auto *root = new wxBoxSizer(wxVERTICAL);
       root->Add(new wxStaticText(this, wxID_ANY, wxString::Format("Repo: %s", repoUrl_)),
@@ -245,7 +246,7 @@ class BitbucketLoadDialog final : public wxDialog
       const auto selected = fileList_->GetSelection() != wxNOT_FOUND
                                 ? fileList_->GetStringSelection().ToStdString()
                                 : std::string();
-      sortAscending_ = !sortAscending_;
+      sortAscending_      = !sortAscending_;
       UpdateSortButtonLabel();
       RenderFileList(selected);
       UpdateOkEnabled();
@@ -286,7 +287,7 @@ class BitbucketLoadDialog final : public wxDialog
 
    void UpdateSortButtonLabel()
    {
-      sortButton_->SetLabel(sortAscending_ ? "Sort ↑" : "Sort ↓");
+      sortButton_->SetLabel(sortAscending_ ? "Sort Asc" : "Sort Desc");
       sortButton_->SetToolTip(sortAscending_ ? "Ascending order" : "Descending order");
    }
 
@@ -340,9 +341,10 @@ class BitbucketLoadDialog final : public wxDialog
 namespace confy {
 
 PickMenuFrame::PickMenuFrame(std::function<void(const wxString &)> onConfigChosen,
-    std::function<void()> onExitRequested) : wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(520, 360)),
-                                             onConfigChosen_(std::move(onConfigChosen)),
-                                             onExitRequested_(std::move(onExitRequested))
+    std::function<void()> onExitRequested) :
+    wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(520, 360)),
+    onConfigChosen_(std::move(onConfigChosen)),
+    onExitRequested_(std::move(onExitRequested))
 {
    auto *panel     = new wxPanel(this);
    auto *rootSizer = new wxBoxSizer(wxVERTICAL);
