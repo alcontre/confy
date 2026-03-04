@@ -171,6 +171,7 @@ LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
 
             auto *sourceNode = FindChildCI(node, "source");
             if (sourceNode) {
+               component.sourcePresent      = true;
                component.source.enabled     = HasChildCI(sourceNode, "isenabled");
                component.source.url         = GetChildValueCI(sourceNode, "url");
                component.source.branchOrTag = GetChildValueCI(sourceNode, "branchortag");
@@ -180,6 +181,7 @@ LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
 
             auto *artifactNode = FindChildCI(node, "artifact");
             if (artifactNode) {
+               component.artifactPresent    = true;
                component.artifact.enabled   = HasChildCI(artifactNode, "isenabled");
                component.artifact.url       = GetChildValueCI(artifactNode, "url");
                component.artifact.version   = GetChildValueCI(artifactNode, "version");

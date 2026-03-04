@@ -7,16 +7,12 @@ namespace {
 
 bool HasSource(const confy::ComponentConfig &component)
 {
-   return !component.source.url.empty() || !component.source.branchOrTag.empty() ||
-          !component.source.script.empty() || component.source.enabled;
+   return component.sourcePresent;
 }
 
 bool HasArtifact(const confy::ComponentConfig &component)
 {
-   return !component.artifact.url.empty() || !component.artifact.version.empty() ||
-          !component.artifact.buildType.empty() || !component.artifact.script.empty() ||
-          !component.artifact.regexIncludes.empty() || !component.artifact.regexExcludes.empty() ||
-          component.artifact.enabled;
+   return component.artifactPresent;
 }
 
 std::string EscapeXml(const std::string &value)

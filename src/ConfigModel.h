@@ -30,6 +30,8 @@ struct ComponentConfig
    std::string name;
    std::string displayName;
    std::string path;
+   bool sourcePresent{false};
+   bool artifactPresent{false};
    SourceConfig source;
    ArtifactConfig artifact;
 };

@@ -47,6 +47,10 @@ int main(int argc, char **argv)
            "First display name mismatch")) {
       return 1;
    }
+   if (!Check(first.sourcePresent, "First component should include Source section"))
+      return 1;
+   if (!Check(first.artifactPresent, "First component should include Artifact section"))
+      return 1;
    if (!Check(first.source.enabled, "First source should be enabled"))
       return 1;
    if (!Check(first.artifact.enabled, "First artifact should be enabled"))
@@ -69,6 +73,10 @@ int main(int argc, char **argv)
    const auto &second = model.components[1];
    if (!Check(second.name == "only_source", "Second component name mismatch"))
       return 1;
+   if (!Check(second.sourcePresent, "Second component should include Source section"))
+      return 1;
+   if (!Check(!second.artifactPresent, "Second component should not include Artifact section"))
+      return 1;
    if (!Check(second.source.enabled, "Second source should be enabled"))
       return 1;
    if (!Check(!second.source.shallow, "Second source should disable shallow clone via NoShallow"))
@@ -78,6 +86,10 @@ int main(int argc, char **argv)
 
    const auto &last = model.components[11];
    if (!Check(last.name == "legacy_adapter", "Last component name mismatch"))
+      return 1;
+   if (!Check(last.sourcePresent, "Last component should include Source section"))
+      return 1;
+   if (!Check(!last.artifactPresent, "Last component should not include Artifact section"))
       return 1;
    if (!Check(last.source.enabled, "Last source should be enabled"))
       return 1;

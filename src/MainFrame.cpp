@@ -48,14 +48,12 @@ const wxColour kModifiedIndicatorActiveColour(255, 140, 0);
 
 bool HasSource(const confy::ComponentConfig &component)
 {
-   return !component.source.url.empty() || !component.source.branchOrTag.empty() ||
-          !component.source.script.empty();
+   return component.sourcePresent;
 }
 
 bool HasArtifact(const confy::ComponentConfig &component)
 {
-   return !component.artifact.url.empty() || !component.artifact.version.empty() ||
-          !component.artifact.buildType.empty() || !component.artifact.script.empty();
+   return component.artifactPresent;
 }
 
 } // namespace

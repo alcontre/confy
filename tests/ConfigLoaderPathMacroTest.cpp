@@ -40,9 +40,17 @@ int main(int argc, char **argv)
    const auto &first = model.components[0];
    if (!Check(first.path == "/tmp/confy-downloads/componentA", "Failed to expand %PATH% in component path"))
       return 1;
+   if (!Check(first.sourcePresent, "First component should have Source section"))
+      return 1;
+   if (!Check(!first.artifactPresent, "First component should not have Artifact section"))
+      return 1;
 
    const auto &second = model.components[1];
    if (!Check(second.path == "componentB", "Component path without %PATH% should remain unchanged"))
+      return 1;
+   if (!Check(second.sourcePresent, "Second component should have Source section"))
+      return 1;
+   if (!Check(!second.artifactPresent, "Second component should not have Artifact section"))
       return 1;
 
    std::cout << "[config-loader-path-macro] OK\n";
