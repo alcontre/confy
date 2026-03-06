@@ -12,6 +12,8 @@ struct SaveConfigResult
    std::string errorMessage;
 };
 
+std::string SaveConfigToString(const ConfigModel &config);
+
 SaveConfigResult SaveConfigToFile(const ConfigModel &config, const std::string &filePath);
 
 std::string BuildHumanReadableConfigSummary(const ConfigModel &config);

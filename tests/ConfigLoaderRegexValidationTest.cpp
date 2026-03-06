@@ -1,28 +1,35 @@
 #include "ConfigLoader.h"
 
-#include <iostream>
-#include <string>
+#include <doctest/doctest.h>
 
-int main(int argc, char **argv)
+TEST_CASE("ConfigLoader rejects invalid artifact regex filters")
 {
-   if (argc < 2) {
-      std::cerr << "Usage: confy_config_loader_regex_validation_test <config.xml>\n";
-      return 2;
-   }
+   static constexpr char kInvalidRegexConfigXml[] = R"xml(<Config>
+    <version>1</version>
+    <path>/tmp/confy-downloads</path>
+    <components>
+        <Component>
+            <name>bad_regex_component</name>
+            <DisplayName>Bad Regex Component</DisplayName>
+            <Path>componentBad</Path>
+            <Artifact>
+                <IsEnabled/>
+                <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
+                <version>myProduct</version>
+                <buildtype>Debug</buildtype>
+                <regex-include>
+                    <regex>[abc</regex>
+                </regex-include>
+            </Artifact>
+        </Component>
+    </components>
+</Config>
+)xml";
 
    confy::ConfigLoader loader;
-   const auto result = loader.LoadFromFile(argv[1]);
+   const auto result = loader.LoadFromString(kInvalidRegexConfigXml);
 
-   if (result.success) {
-      std::cerr << "[config-loader-regex-validation] Expected parser failure for invalid regex\n";
-      return 1;
-   }
-
-   if (result.errorMessage.find("Invalid regex") == std::string::npos) {
-      std::cerr << "[config-loader-regex-validation] Unexpected error: " << result.errorMessage << '\n';
-      return 1;
-   }
-
-   std::cout << "[config-loader-regex-validation] OK\n";
-   return 0;
+    // Invalid regex filters should fail validation with a regex-specific error.
+   CHECK_FALSE(result.success);
+   CHECK(result.errorMessage.find("Invalid regex") != std::string::npos);
 }

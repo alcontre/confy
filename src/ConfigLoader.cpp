@@ -124,18 +124,12 @@ std::string ExpandComponentPathMacro(const std::string &componentPath, const std
 
 namespace confy {
 
-LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
+LoadResult ConfigLoader::LoadFromString(const std::string &xml) const
 {
    LoadResult result;
 
-   const auto xml = ReadAllText(filePath);
-   if (!xml.has_value()) {
-      result.errorMessage = "Could not read file.";
-      return result;
-   }
-
    try {
-      std::vector<char> xmlBuffer(xml->begin(), xml->end());
+      std::vector<char> xmlBuffer(xml.begin(), xml.end());
       xmlBuffer.push_back('\0');
 
       xml_document<> document;
@@ -219,6 +213,16 @@ LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
       result.errorMessage = std::string("Parse error: ") + ex.what();
       return result;
    }
+}
+
+LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
+{
+   const auto xml = ReadAllText(filePath);
+   if (!xml.has_value()) {
+      return {.success = false, .errorMessage = "Could not read file."};
+   }
+
+   return LoadFromString(*xml);
 }
 
 } // namespace confy

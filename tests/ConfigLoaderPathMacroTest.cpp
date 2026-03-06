@@ -1,58 +1,57 @@
 #include "ConfigLoader.h"
 
-#include <iostream>
-#include <string>
+#include <doctest/doctest.h>
 
-namespace {
-
-bool Check(bool condition, const std::string &message)
+TEST_CASE("ConfigLoader expands %PATH% in component paths")
 {
-   if (!condition) {
-      std::cerr << "[config-loader-path-macro] " << message << '\n';
-      return false;
-   }
-   return true;
-}
-
-} // namespace
-
-int main(int argc, char **argv)
-{
-   if (argc < 2) {
-      std::cerr << "Usage: confy_config_loader_path_macro_test <config.xml>\n";
-      return 2;
-   }
+   static constexpr char kPathMacroConfigXml[] = R"xml(<Config>
+    <version>9</version>
+    <path>/tmp/confy-downloads</path>
+    <components>
+        <Component>
+            <name>my_name</name>
+            <DisplayName>My Name</DisplayName>
+            <Path>%PATH%/componentA</Path>
+            <Source>
+                <IsEnabled/>
+                <url>https://bitbucket.example.com/project/myrepo.git</url>
+                <BranchOrTag>master</BranchOrTag>
+            </Source>
+        </Component>
+        <Component>
+            <name>only_source</name>
+            <DisplayName>Only Source</DisplayName>
+            <Path>componentB</Path>
+            <Source>
+                <IsEnabled/>
+                <url>https://bitbucket.example.com/project/another-repo.git</url>
+                <BranchOrTag>release/1.0</BranchOrTag>
+            </Source>
+        </Component>
+    </components>
+</Config>
+)xml";
 
    confy::ConfigLoader loader;
-   const auto result = loader.LoadFromFile(argv[1]);
+   const auto result = loader.LoadFromString(kPathMacroConfigXml);
 
-   if (!Check(result.success, "Expected parser success")) {
-      std::cerr << "[config-loader-path-macro] error: " << result.errorMessage << '\n';
-      return 1;
-   }
+    // Path macro expansion input should parse successfully.
+   REQUIRE(result.success);
 
    const auto &model = result.config;
-   if (!Check(model.rootPath == "/tmp/confy-downloads", "Unexpected root path"))
-      return 1;
-   if (!Check(model.components.size() == 2, "Expected 2 components"))
-      return 1;
+    // The config root path and component count should come from the embedded XML.
+   CHECK(model.rootPath == "/tmp/confy-downloads");
+   REQUIRE(model.components.size() == 2);
 
    const auto &first = model.components[0];
-   if (!Check(first.path == "/tmp/confy-downloads/componentA", "Failed to expand %PATH% in component path"))
-      return 1;
-   if (!Check(first.sourcePresent, "First component should have Source section"))
-      return 1;
-   if (!Check(!first.artifactPresent, "First component should not have Artifact section"))
-      return 1;
+    // %PATH% should expand in component paths while preserving section presence.
+   CHECK(first.path == "/tmp/confy-downloads/componentA");
+   CHECK(first.sourcePresent);
+   CHECK_FALSE(first.artifactPresent);
 
    const auto &second = model.components[1];
-   if (!Check(second.path == "componentB", "Component path without %PATH% should remain unchanged"))
-      return 1;
-   if (!Check(second.sourcePresent, "Second component should have Source section"))
-      return 1;
-   if (!Check(!second.artifactPresent, "Second component should not have Artifact section"))
-      return 1;
-
-   std::cout << "[config-loader-path-macro] OK\n";
-   return 0;
+    // Paths without %PATH% should be left unchanged.
+   CHECK(second.path == "componentB");
+   CHECK(second.sourcePresent);
+   CHECK_FALSE(second.artifactPresent);
 }

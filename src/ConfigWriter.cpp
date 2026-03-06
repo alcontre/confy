@@ -58,10 +58,8 @@ void WriteTag(std::ostringstream &output,
 
 namespace confy {
 
-SaveConfigResult SaveConfigToFile(const ConfigModel &config, const std::string &filePath)
+std::string SaveConfigToString(const ConfigModel &config)
 {
-   SaveConfigResult result;
-
    std::ostringstream xml;
    xml << "<Config>\n";
    xml << "    <version>" << config.version << "</version>\n";
@@ -123,13 +121,21 @@ SaveConfigResult SaveConfigToFile(const ConfigModel &config, const std::string &
    xml << "    </components>\n";
    xml << "</Config>\n";
 
+   return xml.str();
+}
+
+SaveConfigResult SaveConfigToFile(const ConfigModel &config, const std::string &filePath)
+{
+   SaveConfigResult result;
+   const auto xml = SaveConfigToString(config);
+
    std::ofstream output(filePath, std::ios::binary | std::ios::trunc);
    if (!output) {
       result.errorMessage = "Could not open output file for writing.";
       return result;
    }
 
-   output << xml.str();
+   output << xml;
    if (!output.good()) {
       result.errorMessage = "Failed to write XML to output file.";
       return result;

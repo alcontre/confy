@@ -64,6 +64,7 @@ set(wxBUILD_SHARED OFF)
 set(wxBUILD_PRECOMP OFF)
 set(wxUSE_LIBTIFF OFF)
 add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
+add_subdirectory(third_party/doctest EXCLUDE_FROM_ALL)
 
 add_executable(confy WIN32 ${CONFY_SOURCES} ${CONFY_HEADERS})
 target_include_directories(confy PRIVATE
@@ -72,51 +73,21 @@ target_include_directories(confy PRIVATE
 )
 target_link_libraries(confy PRIVATE wx::core wx::base CURL::libcurl)
 
-add_executable(confy_parser_smoke
+add_executable(confy_config_io_test
+    tests/DoctestMain.cpp
     tests/ParserSmokeTest.cpp
-    src/ConfigLoader.cpp
-)
-target_include_directories(confy_parser_smoke PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-
-add_executable(confy_config_loader_regex_validation_test
     tests/ConfigLoaderRegexValidationTest.cpp
-    src/ConfigLoader.cpp
-)
-target_include_directories(confy_config_loader_regex_validation_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-
-add_executable(confy_config_loader_path_macro_test
     tests/ConfigLoaderPathMacroTest.cpp
-    src/ConfigLoader.cpp
-)
-target_include_directories(confy_config_loader_path_macro_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-
-add_executable(confy_config_loader_file_error_test
     tests/ConfigLoaderFileErrorTest.cpp
-    src/ConfigLoader.cpp
-)
-target_include_directories(confy_config_loader_file_error_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-
-add_executable(confy_config_writer_test
     tests/ConfigWriterTest.cpp
     src/ConfigWriter.cpp
     src/ConfigLoader.cpp
 )
-target_include_directories(confy_config_writer_test PRIVATE
+target_include_directories(confy_config_io_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
 )
+target_link_libraries(confy_config_io_test PRIVATE doctest::doctest)
 
 add_executable(confy_auth_credentials_test
     tests/AuthCredentialsTest.cpp
@@ -185,30 +156,8 @@ target_include_directories(confy_download_worker_queue_test PRIVATE
 target_link_libraries(confy_download_worker_queue_test PRIVATE wx::base CURL::libcurl)
 
 enable_testing()
-add_test(
-    NAME parser_smoke
-    COMMAND confy_parser_smoke ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.sample.xml
-)
-
-add_test(
-    NAME config_loader_regex_validation
-    COMMAND confy_config_loader_regex_validation_test ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.invalid-regex.xml
-)
-
-add_test(
-    NAME config_loader_path_macro
-    COMMAND confy_config_loader_path_macro_test ${CMAKE_CURRENT_SOURCE_DIR}/samples/config.path-macro.xml
-)
-
-add_test(
-    NAME config_loader_file_error
-    COMMAND confy_config_loader_file_error_test
-)
-
-add_test(
-    NAME config_writer
-    COMMAND confy_config_writer_test
-)
+include(${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest/scripts/cmake/doctest.cmake)
+doctest_discover_tests(confy_config_io_test)
 
 add_test(
     NAME auth_credentials

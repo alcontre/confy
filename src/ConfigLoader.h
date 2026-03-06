@@ -17,6 +17,7 @@ class ConfigLoader final
 {
  public:
    LoadResult LoadFromFile(const std::string &filePath) const;
+   LoadResult LoadFromString(const std::string &xml) const;
 };
 
 } // namespace confy

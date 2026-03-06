@@ -1,24 +1,9 @@
 #include "ConfigWriter.h"
 #include "ConfigLoader.h"
 
-#include <filesystem>
-#include <iostream>
-#include <string>
+#include <doctest/doctest.h>
 
-namespace {
-
-bool Check(bool condition, const std::string &message)
-{
-   if (!condition) {
-      std::cerr << "[config-writer] " << message << '\n';
-      return false;
-   }
-   return true;
-}
-
-} // namespace
-
-int main()
+TEST_CASE("ConfigWriter round-trips configuration and summary output")
 {
    confy::ConfigModel model;
    model.version  = 42;
@@ -67,74 +52,38 @@ int main()
    model.components.push_back(enabledOnlySource);
    model.components.push_back(noSections);
 
-   const auto outputPath = std::filesystem::temp_directory_path() / "confy_config_writer_test.xml";
-   const auto saveResult = confy::SaveConfigToFile(model, outputPath.string());
-   if (!Check(saveResult.success, "SaveConfigToFile should succeed")) {
-      std::cerr << "[config-writer] save error: " << saveResult.errorMessage << '\n';
-      return 1;
-   }
+   const auto xml = confy::SaveConfigToString(model);
+   // Serializing a populated config should produce non-empty XML.
+   CHECK_FALSE(xml.empty());
 
    confy::ConfigLoader loader;
-   const auto loadResult = loader.LoadFromFile(outputPath.string());
-   if (!Check(loadResult.success, "Saved XML should reload successfully")) {
-      std::cerr << "[config-writer] load error: " << loadResult.errorMessage << '\n';
-      return 1;
-   }
+   const auto loadResult = loader.LoadFromString(xml);
+   // Writer output should be valid loader input.
+   REQUIRE(loadResult.success);
 
    const auto &loaded = loadResult.config;
-   if (!Check(loaded.version == 42, "Version should round-trip"))
-      return 1;
-   if (!Check(loaded.rootPath == "/tmp/confy", "Root path should round-trip"))
-      return 1;
-   if (!Check(loaded.components.size() == 4, "Component count should round-trip"))
-      return 1;
-   if (!Check(loaded.components[0].sourcePresent, "Source section presence should round-trip"))
-      return 1;
-   if (!Check(loaded.components[0].artifactPresent, "Artifact section presence should round-trip"))
-      return 1;
-   if (!Check(loaded.components[0].source.enabled, "Source enabled should round-trip"))
-      return 1;
-   if (!Check(!loaded.components[0].source.shallow, "NoShallow should round-trip"))
-      return 1;
-   if (!Check(loaded.components[0].artifact.enabled, "Artifact enabled should round-trip"))
-      return 1;
-   if (!Check(loaded.components[0].artifact.version == "1.2.3", "Version should round-trip"))
-      return 1;
-   if (!Check(loaded.components[0].artifact.buildType == "Release", "Build type should round-trip"))
-      return 1;
-   if (!Check(loaded.components[1].artifactPresent, "Disabled artifact section should still be present"))
-      return 1;
-   if (!Check(loaded.components[2].sourcePresent, "Enabled-only source section should be present"))
-      return 1;
-   if (!Check(loaded.components[2].source.enabled, "Enabled-only source IsEnabled should round-trip"))
-      return 1;
-   if (!Check(!loaded.components[2].artifactPresent, "Absent artifact section should remain absent"))
-      return 1;
-   if (!Check(!loaded.components[3].sourcePresent && !loaded.components[3].artifactPresent,
-           "Components with no sections should remain section-less")) {
-      return 1;
-   }
+   // Core config metadata and section presence should survive a write/read round-trip.
+   CHECK(loaded.version == 42);
+   CHECK(loaded.rootPath == "/tmp/confy");
+   REQUIRE(loaded.components.size() == 4);
+   CHECK(loaded.components[0].sourcePresent);
+   CHECK(loaded.components[0].artifactPresent);
+   CHECK(loaded.components[0].source.enabled);
+   CHECK_FALSE(loaded.components[0].source.shallow);
+   CHECK(loaded.components[0].artifact.enabled);
+   CHECK(loaded.components[0].artifact.version == "1.2.3");
+   CHECK(loaded.components[0].artifact.buildType == "Release");
+   CHECK(loaded.components[1].artifactPresent);
+   CHECK(loaded.components[2].sourcePresent);
+   CHECK(loaded.components[2].source.enabled);
+   CHECK_FALSE(loaded.components[2].artifactPresent);
+   CHECK_FALSE(loaded.components[3].sourcePresent);
+   CHECK_FALSE(loaded.components[3].artifactPresent);
 
    const auto summary = confy::BuildHumanReadableConfigSummary(model);
-   if (!Check(summary.find("Core Library (core_lib)") != std::string::npos,
-           "Summary should include display and internal names")) {
-      return 1;
-   }
-   if (!Check(summary.find("version: 1.2.3") != std::string::npos,
-           "Summary should include selected version")) {
-      return 1;
-   }
-   if (!Check(summary.find("buildtype: Release") != std::string::npos,
-           "Summary should include selected build type")) {
-      return 1;
-   }
-   if (!Check(summary.find("Optional Tooling") == std::string::npos,
-           "Summary should exclude disabled artifact entries")) {
-      return 1;
-   }
-
-   std::filesystem::remove(outputPath);
-
-   std::cout << "[config-writer] OK\n";
-   return 0;
+   // The human-readable summary should include enabled artifact entries and omit disabled ones.
+   CHECK(summary.find("Core Library (core_lib)") != std::string::npos);
+   CHECK(summary.find("version: 1.2.3") != std::string::npos);
+   CHECK(summary.find("buildtype: Release") != std::string::npos);
+   CHECK(summary.find("Optional Tooling") == std::string::npos);
 }
