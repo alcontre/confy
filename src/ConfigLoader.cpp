@@ -5,6 +5,7 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <regex>
 #include <vector>
 
@@ -13,11 +14,11 @@ namespace {
 using rapidxml::xml_document;
 using rapidxml::xml_node;
 
-std::string ReadAllText(const std::string &filePath)
+std::optional<std::string> ReadAllText(const std::string &filePath)
 {
    std::ifstream input(filePath, std::ios::binary);
    if (!input) {
-      return {};
+      return std::nullopt;
    }
 
    return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
@@ -128,13 +129,13 @@ LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
    LoadResult result;
 
    const auto xml = ReadAllText(filePath);
-   if (xml.empty()) {
+   if (!xml.has_value()) {
       result.errorMessage = "Could not read file.";
       return result;
    }
 
    try {
-      std::vector<char> xmlBuffer(xml.begin(), xml.end());
+      std::vector<char> xmlBuffer(xml->begin(), xml->end());
       xmlBuffer.push_back('\0');
 
       xml_document<> document;
