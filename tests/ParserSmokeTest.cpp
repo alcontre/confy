@@ -193,17 +193,17 @@ TEST_CASE("ConfigLoader parses representative config XML")
    confy::ConfigLoader loader;
    const auto result = loader.LoadFromString(kSampleConfigXml);
 
-    // The representative sample config should parse successfully.
+   // The representative sample config should parse successfully.
    REQUIRE(result.success);
 
    const auto &model = result.config;
-    // Top-level config metadata should round-trip from the embedded XML.
+   // Top-level config metadata should round-trip from the embedded XML.
    CHECK(model.version == 9);
    CHECK(model.rootPath == "/tmp/confy-downloads");
    REQUIRE(model.components.size() == 12);
 
    const auto &first = model.components[0];
-    // The first component should preserve full source and artifact details.
+   // The first component should preserve full source and artifact details.
    CHECK(first.name == "my_name");
    CHECK(first.displayName == "My Name is very very very very very very long");
    CHECK(first.path == "/tmp/confy-downloads/componentA");
@@ -220,7 +220,7 @@ TEST_CASE("ConfigLoader parses representative config XML")
    CHECK(first.artifact.regexExcludes[0] == "/tests?/");
 
    const auto &second = model.components[1];
-    // The second component should remain source-only and honor NoShallow.
+   // The second component should remain source-only and honor NoShallow.
    CHECK(second.name == "only_source");
    CHECK(second.sourcePresent);
    CHECK(!second.artifactPresent);
@@ -228,7 +228,7 @@ TEST_CASE("ConfigLoader parses representative config XML")
    CHECK(!second.source.shallow);
 
    const auto &last = model.components[11];
-    // The last component should remain source-only and enabled.
+   // The last component should remain source-only and enabled.
    CHECK(last.name == "legacy_adapter");
    CHECK(last.sourcePresent);
    CHECK(!last.artifactPresent);

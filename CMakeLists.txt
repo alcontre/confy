@@ -89,105 +89,31 @@ target_include_directories(confy_config_io_test PRIVATE
 )
 target_link_libraries(confy_config_io_test PRIVATE doctest::doctest)
 
-add_executable(confy_auth_credentials_test
+add_executable(confy_service_test
+    tests/DoctestMain.cpp
     tests/AuthCredentialsTest.cpp
-    src/AuthCredentials.cpp
-)
-target_include_directories(confy_auth_credentials_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-
-add_executable(confy_nexus_client_auth_test
     tests/NexusClientAuthTest.cpp
-    src/NexusClient.cpp
-    src/AuthCredentials.cpp
-)
-target_include_directories(confy_nexus_client_auth_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-target_link_libraries(confy_nexus_client_auth_test PRIVATE CURL::libcurl)
-
-add_executable(confy_nexus_client_path_segment_test
     tests/NexusClientPathSegmentTest.cpp
-    src/NexusClient.cpp
-    src/AuthCredentials.cpp
-)
-target_include_directories(confy_nexus_client_path_segment_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-target_link_libraries(confy_nexus_client_path_segment_test PRIVATE CURL::libcurl)
-
-add_executable(confy_git_client_test
     tests/GitClientTest.cpp
-    src/GitClient.cpp
-    src/AuthCredentials.cpp
-)
-target_include_directories(confy_git_client_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-
-add_executable(confy_bitbucket_client_test
     tests/BitbucketClientTest.cpp
-    src/BitbucketClient.cpp
+    tests/DownloadWorkerQueueTest.cpp
     src/AuthCredentials.cpp
+    src/NexusClient.cpp
+    src/GitClient.cpp
+    src/BitbucketClient.cpp
+    src/DownloadWorkerQueue.cpp
 )
-target_include_directories(confy_bitbucket_client_test PRIVATE
+target_include_directories(confy_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/single_include
 )
-target_link_libraries(confy_bitbucket_client_test PRIVATE CURL::libcurl)
-
-add_executable(confy_download_worker_queue_test
-    tests/DownloadWorkerQueueTest.cpp
-    src/DownloadWorkerQueue.cpp
-    src/NexusClient.cpp
-    src/GitClient.cpp
-    src/AuthCredentials.cpp
-)
-target_include_directories(confy_download_worker_queue_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rapidxml
-)
-target_link_libraries(confy_download_worker_queue_test PRIVATE wx::base CURL::libcurl)
+target_link_libraries(confy_service_test PRIVATE doctest::doctest wx::base CURL::libcurl)
 
 enable_testing()
 include(${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest/scripts/cmake/doctest.cmake)
 doctest_discover_tests(confy_config_io_test)
-
-add_test(
-    NAME auth_credentials
-    COMMAND confy_auth_credentials_test
-)
-
-add_test(
-    NAME nexus_client_auth
-    COMMAND confy_nexus_client_auth_test
-)
-
-add_test(
-    NAME nexus_client_path_segment
-    COMMAND confy_nexus_client_path_segment_test
-)
-
-add_test(
-    NAME git_client
-    COMMAND confy_git_client_test
-)
-
-add_test(
-    NAME bitbucket_client
-    COMMAND confy_bitbucket_client_test
-)
-
-add_test(
-    NAME download_worker_queue
-    COMMAND confy_download_worker_queue_test
-)
+doctest_discover_tests(confy_service_test)
 
 if(MSVC)
     target_compile_options(confy PRIVATE /W4)

@@ -48,13 +48,18 @@ namespace confy {
 
 bool AuthCredentials::LoadFromM2SettingsXml(const std::string &filePath, std::string &errorMessage)
 {
-   credentialsByHostPort_.clear();
-
    const auto xml = ReadAll(filePath);
    if (xml.empty()) {
       errorMessage = "Unable to read m2 settings file: " + filePath;
       return false;
    }
+
+   return LoadFromM2SettingsXmlString(xml, errorMessage);
+}
+
+bool AuthCredentials::LoadFromM2SettingsXmlString(const std::string &xml, std::string &errorMessage)
+{
+   credentialsByHostPort_.clear();
 
    try {
       std::vector<char> buffer(xml.begin(), xml.end());

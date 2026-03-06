@@ -29,7 +29,7 @@ TEST_CASE("ConfigLoader rejects invalid artifact regex filters")
    confy::ConfigLoader loader;
    const auto result = loader.LoadFromString(kInvalidRegexConfigXml);
 
-    // Invalid regex filters should fail validation with a regex-specific error.
+   // Invalid regex filters should fail validation with a regex-specific error.
    CHECK_FALSE(result.success);
    CHECK(result.errorMessage.find("Invalid regex") != std::string::npos);
 }

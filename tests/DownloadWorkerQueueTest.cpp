@@ -2,20 +2,9 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <iostream>
-#include <string>
 #include <vector>
 
 namespace {
-
-bool Check(bool condition, const std::string &message)
-{
-   if (!condition) {
-      std::cerr << "[download-worker-queue-test] " << message << '\n';
-      return false;
-   }
-   return true;
-}
 
 confy::DownloadJob MakeSourceJob(std::uint64_t jobId, std::size_t componentIndex)
 {
@@ -33,7 +22,9 @@ confy::DownloadJob MakeSourceJob(std::uint64_t jobId, std::size_t componentIndex
 
 } // namespace
 
-int main()
+#include <doctest/doctest.h>
+
+TEST_CASE("DownloadWorkerQueue cancels queued jobs and emits cancellation events")
 {
    confy::DownloadWorkerQueue queue(1);
 
@@ -49,25 +40,18 @@ int main()
       events.push_back(event);
    }
 
-   if (!Check(events.size() == 3, "Expected 3 cancellation events after draining queued jobs")) {
-      return 1;
-   }
+   // Cancelling all queued jobs should emit one cancellation event per submitted job.
+   REQUIRE(events.size() == 3);
 
    std::vector<std::uint64_t> jobIds;
    for (const auto &queuedEvent : events) {
-      if (!Check(queuedEvent.type == confy::DownloadEventType::Cancelled,
-              "Expected event type Cancelled for drained queued jobs")) {
-         return 1;
-      }
+      // Each drained event should be marked as cancelled.
+      CHECK(queuedEvent.type == confy::DownloadEventType::Cancelled);
       jobIds.push_back(queuedEvent.jobId);
    }
 
    std::sort(jobIds.begin(), jobIds.end());
-   if (!Check(jobIds == std::vector<std::uint64_t>{1001, 1002, 1003},
-           "Expected cancellation events for all submitted job IDs")) {
-      return 1;
-   }
 
-   std::cout << "[download-worker-queue-test] OK\n";
-   return 0;
+   // The queue should report cancellation for every submitted job ID.
+   CHECK(jobIds == std::vector<std::uint64_t>{1001, 1002, 1003});
 }

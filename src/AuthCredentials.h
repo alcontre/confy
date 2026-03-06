@@ -15,6 +15,7 @@ class AuthCredentials final
 {
  public:
    bool LoadFromM2SettingsXml(const std::string &filePath, std::string &errorMessage);
+   bool LoadFromM2SettingsXmlString(const std::string &xml, std::string &errorMessage);
    bool TryGetByServerId(const std::string &serverId, ServerCredentials &out) const;
    bool TryGetForHost(const std::string &hostPort, ServerCredentials &out) const;
 

@@ -1,37 +1,17 @@
 #include "NexusClient.h"
 
-#include <iostream>
-#include <string>
+#include <doctest/doctest.h>
 
-namespace {
-
-bool Check(bool condition, const std::string &message)
-{
-   if (!condition) {
-      std::cerr << "[nexus-client-auth-test] " << message << '\n';
-      return false;
-   }
-   return true;
-}
-
-} // namespace
-
-int main()
+TEST_CASE("NexusClient builds curl auth payloads from credentials")
 {
    const confy::ServerCredentials creds{"svc-user", "P@ss word/with:symbols"};
    const auto userPwd = confy::NexusClient::BuildCurlUserPwd(creds);
 
-   if (!Check(userPwd == "svc-user:P@ss word/with:symbols",
-           "Expected CURLOPT_USERPWD payload with raw username/password")) {
-      return 1;
-   }
+   // Username and password should be joined verbatim for CURLOPT_USERPWD.
+   CHECK(userPwd == "svc-user:P@ss word/with:symbols");
 
    const confy::ServerCredentials emptyPassword{"svc-user", ""};
-   if (!Check(confy::NexusClient::BuildCurlUserPwd(emptyPassword) == "svc-user:",
-           "Expected CURLOPT_USERPWD payload to preserve empty password")) {
-      return 1;
-   }
 
-   std::cout << "[nexus-client-auth-test] OK\n";
-   return 0;
+   // Empty passwords should still produce a trailing colon for curl.
+   CHECK(confy::NexusClient::BuildCurlUserPwd(emptyPassword) == "svc-user:");
 }

@@ -358,7 +358,8 @@ bool ExtractPathFromHref(const std::string &href,
 
 namespace confy {
 
-NexusClient::NexusClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
+NexusClient::NexusClient(AuthCredentials credentials) :
+    credentials_(std::move(credentials)) {}
 
 std::string NexusClient::BuildCurlUserPwd(const ServerCredentials &creds)
 {

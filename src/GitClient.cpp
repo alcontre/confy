@@ -381,7 +381,8 @@ void ClearReadOnlyAttributeRecursive(const fs::path &rootPath)
 
 namespace confy {
 
-GitClient::GitClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
+GitClient::GitClient(AuthCredentials credentials) :
+    credentials_(std::move(credentials)) {}
 
 bool GitClient::ExtractHostPort(const std::string &repositoryUrl, std::string &outHostPort)
 {

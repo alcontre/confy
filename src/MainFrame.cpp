@@ -490,9 +490,9 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
    row.artifactBuildType = artifactBuildType;
    rows_.push_back(row);
 
-   rowBaselines_[componentIndex].sourceBranch     = component.source.branchOrTag;
-   rowBaselines_[componentIndex].artifactVersion  = component.artifact.version;
-   rowBaselines_[componentIndex].artifactBuildType = component.artifact.buildType;
+   rowBaselines_[componentIndex].sourceBranch        = component.source.branchOrTag;
+   rowBaselines_[componentIndex].artifactVersion     = component.artifact.version;
+   rowBaselines_[componentIndex].artifactBuildType   = component.artifact.buildType;
    rowChangeState_[componentIndex].modifiedIndicator = modifiedIndicator;
 
    auto bindComboWheelProtection = [this](wxComboBox *combo) {
@@ -609,8 +609,8 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
          return;
       }
       rowChangeState_[componentIndex].artifactVersionTouched = true;
-      const auto version                                  = rows_[componentIndex].artifactVersion->GetValue().ToStdString();
-      config_.components[componentIndex].artifact.version = version;
+      const auto version                                     = rows_[componentIndex].artifactVersion->GetValue().ToStdString();
+      config_.components[componentIndex].artifact.version    = version;
       RefreshRowModifiedIndicator(componentIndex);
       EnqueueBuildTypeFetch(componentIndex, version);
    });

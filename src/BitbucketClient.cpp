@@ -101,7 +101,8 @@ bool ParsePagedResponse(const std::string &body,
 
 namespace confy {
 
-BitbucketClient::BitbucketClient(AuthCredentials credentials) : credentials_(std::move(credentials)) {}
+BitbucketClient::BitbucketClient(AuthCredentials credentials) :
+    credentials_(std::move(credentials)) {}
 
 bool BitbucketClient::ListBranches(const std::string &repositoryUrl,
     std::vector<std::string> &outBranches,

@@ -1,68 +1,30 @@
 #include "BitbucketClient.h"
 
-#include <iostream>
-#include <string>
+#include <doctest/doctest.h>
 
-namespace {
-
-bool Check(bool condition, const std::string &message)
-{
-   if (!condition) {
-      std::cerr << "[bitbucket-client-test] " << message << '\n';
-      return false;
-   }
-   return true;
-}
-
-} // namespace
-
-int main()
+TEST_CASE("BitbucketClient parses supported repository URL formats")
 {
    confy::BitbucketClient::RepoCoordinates repo;
    std::string error;
-   if (!Check(
-           confy::BitbucketClient::ParseRepositoryUrl("https://bitbucket.example.com/scm/OPS/confy-configs.git",
-               repo,
-               error),
-           "Expected /scm URL to parse")) {
-      return 1;
-   }
 
-   if (!Check(repo.baseUrl == "https://bitbucket.example.com", "Unexpected baseUrl from /scm URL")) {
-      return 1;
-   }
-   if (!Check(repo.hostPort == "bitbucket.example.com", "Unexpected hostPort from /scm URL")) {
-      return 1;
-   }
-   if (!Check(repo.projectKey == "OPS", "Unexpected projectKey from /scm URL")) {
-      return 1;
-   }
-   if (!Check(repo.repositorySlug == "confy-configs", "Unexpected repository slug from /scm URL")) {
-      return 1;
-   }
+   // /scm repository URLs should map to the expected coordinates.
+   REQUIRE(confy::BitbucketClient::ParseRepositoryUrl(
+       "https://bitbucket.example.com/scm/OPS/confy-configs.git", repo, error));
 
-   if (!Check(confy::BitbucketClient::ParseRepositoryUrl(
-                  "https://bitbucket.example.com/projects/OPS/repos/confy-configs/browse", repo, error),
-           "Expected /projects URL to parse")) {
-      return 1;
-   }
+   CHECK(repo.baseUrl == "https://bitbucket.example.com");
+   CHECK(repo.hostPort == "bitbucket.example.com");
+   CHECK(repo.projectKey == "OPS");
+   CHECK(repo.repositorySlug == "confy-configs");
 
-   if (!Check(repo.baseUrl == "https://bitbucket.example.com", "Unexpected baseUrl from /projects URL")) {
-      return 1;
-   }
-   if (!Check(repo.projectKey == "OPS", "Unexpected projectKey from /projects URL")) {
-      return 1;
-   }
-   if (!Check(repo.repositorySlug == "confy-configs", "Unexpected repository slug from /projects URL")) {
-      return 1;
-   }
+   // /projects repository URLs should map to the same coordinates.
+   REQUIRE(confy::BitbucketClient::ParseRepositoryUrl(
+       "https://bitbucket.example.com/projects/OPS/repos/confy-configs/browse", repo, error));
 
-   if (!Check(!confy::BitbucketClient::ParseRepositoryUrl("https://bitbucket.example.com/OPS/confy-configs", repo,
-                  error),
-           "Expected unsupported URL to fail")) {
-      return 1;
-   }
+   CHECK(repo.baseUrl == "https://bitbucket.example.com");
+   CHECK(repo.projectKey == "OPS");
+   CHECK(repo.repositorySlug == "confy-configs");
 
-   std::cout << "[bitbucket-client-test] OK\n";
-   return 0;
+   // Unsupported URL layouts should be rejected.
+   CHECK_FALSE(confy::BitbucketClient::ParseRepositoryUrl(
+       "https://bitbucket.example.com/OPS/confy-configs", repo, error));
 }

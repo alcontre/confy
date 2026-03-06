@@ -1,44 +1,9 @@
 #include "AuthCredentials.h"
 
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <string>
+#include <doctest/doctest.h>
 
-namespace fs = std::filesystem;
-
-namespace {
-
-bool Check(bool condition, const std::string &message)
+TEST_CASE("AuthCredentials loads and looks up Maven server credentials")
 {
-   if (!condition) {
-      std::cerr << "[auth-credentials-test] " << message << '\n';
-      return false;
-   }
-   return true;
-}
-
-bool WriteFile(const fs::path &filePath, const std::string &content)
-{
-   std::ofstream out(filePath, std::ios::binary);
-   if (!out) {
-      return false;
-   }
-   out << content;
-   return out.good();
-}
-
-} // namespace
-
-int main()
-{
-   const fs::path tempDir = fs::temp_directory_path() / "confy-auth-tests";
-   std::error_code ec;
-   fs::create_directories(tempDir, ec);
-
-   const fs::path validPath   = tempDir / "settings-valid.xml";
-   const fs::path invalidPath = tempDir / "settings-invalid.xml";
-
    const std::string validXml = R"XML(<settings>
   <servers>
     <server>
@@ -69,49 +34,30 @@ int main()
 </not-settings>
 )XML";
 
-   if (!Check(WriteFile(validPath, validXml), "Failed to write valid settings fixture"))
-      return 1;
-   if (!Check(WriteFile(invalidPath, invalidXml), "Failed to write invalid settings fixture"))
-      return 1;
-
    confy::AuthCredentials auth;
    std::string error;
 
-   if (!Check(auth.LoadFromM2SettingsXml(validPath.string(), error), "Expected valid settings to load")) {
-      std::cerr << "[auth-credentials-test] error: " << error << '\n';
-      return 1;
-   }
+   // Valid Maven settings XML should load into the credential store.
+   REQUIRE(auth.LoadFromM2SettingsXmlString(validXml, error));
 
    confy::ServerCredentials creds;
-   if (!Check(auth.TryGetForHost("localhost:8081", creds), "Expected localhost:8081 lookup to succeed"))
-      return 1;
-   if (!Check(creds.username == "aa", "Expected username aa"))
-      return 1;
-   if (!Check(creds.password == "bb", "Expected password bb"))
-      return 1;
+   // Host lookup should return the expected username and password.
+   REQUIRE(auth.TryGetForHost("localhost:8081", creds));
+   CHECK(creds.username == "aa");
+   CHECK(creds.password == "bb");
 
-   if (!Check(!auth.TryGetForHost("missing-host:1234", creds), "Expected unknown host lookup to fail"))
-      return 1;
+   // Unknown hosts should not resolve to credentials.
+   CHECK_FALSE(auth.TryGetForHost("missing-host:1234", creds));
 
-   if (!Check(auth.TryGetByServerId("bitbucket.internal:7990", creds),
-           "Expected token-only server-id lookup to succeed")) {
-      return 1;
-   }
-   if (!Check(creds.username.empty(), "Expected empty username for token-only server entry"))
-      return 1;
-   if (!Check(creds.password == "token-only-value", "Expected token-only password value"))
-      return 1;
+   // Token-only entries should keep an empty username and preserve the password field.
+   REQUIRE(auth.TryGetByServerId("bitbucket.internal:7990", creds));
+   CHECK(creds.username.empty());
+   CHECK(creds.password == "token-only-value");
 
    confy::AuthCredentials badAuth;
    std::string badError;
-   if (!Check(!badAuth.LoadFromM2SettingsXml(invalidPath.string(), badError),
-           "Expected invalid settings root to fail")) {
-      return 1;
-   }
 
-   if (!Check(!badError.empty(), "Expected parse error message for invalid settings"))
-      return 1;
-
-   std::cout << "[auth-credentials-test] OK\n";
-   return 0;
+   // Invalid settings XML should fail with a non-empty parse error.
+   CHECK_FALSE(badAuth.LoadFromM2SettingsXmlString(invalidXml, badError));
+   CHECK_FALSE(badError.empty());
 }

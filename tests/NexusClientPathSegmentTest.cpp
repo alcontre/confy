@@ -1,23 +1,10 @@
 #include "NexusClient.h"
 
-#include <iostream>
-#include <string>
 #include <vector>
 
-namespace {
+#include <doctest/doctest.h>
 
-bool Check(bool condition, const std::string &message)
-{
-   if (!condition) {
-      std::cerr << "[nexus-client-path-segment-test] " << message << '\n';
-      return false;
-   }
-   return true;
-}
-
-} // namespace
-
-int main()
+TEST_CASE("NexusClient extracts immediate child directories")
 {
    const std::vector<std::string> directories{
        "component-a/1.0.0/",
@@ -29,24 +16,17 @@ int main()
 
    const auto versions =
        confy::NexusClient::ExtractImmediateChildDirectories(directories, "component-a/");
-   if (!Check(versions.size() == 2, "Expected two unique versions for component-a")) {
-      return 1;
-   }
-   if (!Check(versions[0] == "1.0.0" && versions[1] == "2.0.0",
-           "Expected sorted versions [1.0.0, 2.0.0]")) {
-      return 1;
-   }
+
+   // Version extraction should deduplicate and sort immediate child directories.
+   REQUIRE(versions.size() == 2);
+   CHECK(versions[0] == "1.0.0");
+   CHECK(versions[1] == "2.0.0");
 
    const auto buildTypes =
        confy::NexusClient::ExtractImmediateChildDirectories(directories, "component-a/2.0.0/");
-   if (!Check(buildTypes.size() == 2, "Expected two build types for component-a/2.0.0")) {
-      return 1;
-   }
-   if (!Check(buildTypes[0] == "Debug" && buildTypes[1] == "Release",
-           "Expected sorted build types [Debug, Release]")) {
-      return 1;
-   }
 
-   std::cout << "[nexus-client-path-segment-test] OK\n";
-   return 0;
+   // Build type extraction should expose only the next directory level.
+   REQUIRE(buildTypes.size() == 2);
+   CHECK(buildTypes[0] == "Debug");
+   CHECK(buildTypes[1] == "Release");
 }

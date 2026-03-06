@@ -20,7 +20,8 @@ namespace {
 class DebugConsoleFrame final : public wxFrame
 {
  public:
-   explicit DebugConsoleFrame(wxWindow *parent) : wxFrame(parent, wxID_ANY, "Debug Console", wxDefaultPosition, wxSize(900, 360))
+   explicit DebugConsoleFrame(wxWindow *parent) :
+       wxFrame(parent, wxID_ANY, "Debug Console", wxDefaultPosition, wxSize(900, 360))
    {
       auto *rootSizer = new wxBoxSizer(wxVERTICAL);
 
