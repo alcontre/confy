@@ -19,9 +19,12 @@ Large projects often consist of many repositories and binary artifacts that need
 
 | Requirement | Notes |
 |---|---|
+| **vcpkg** | Required for non-vendored C/C++ dependencies such as `curl` |
 | **git** | Must be on your `PATH`; used for all source checkouts |
 | **Network access** | To your Bitbucket Data Center and/or Nexus repository |
 | **Credentials** | Bitbucket HTTPS credentials read from `~/.m2/settings.xml` |
+
+`wxWidgets`, `doctest`, `nlohmann_json`, and `rapidxml` remain vendored in this repository. `curl` is resolved via the checked-in vcpkg manifest.
 
 ---
 
@@ -30,13 +33,22 @@ Large projects often consist of many repositories and binary artifacts that need
 ### Build from source
 
 ```bash
-# Configure and build
-cmake -S . -B build
+# One-time setup: install vcpkg locally
+git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+"$HOME/vcpkg/bootstrap-vcpkg.sh"
+export VCPKG_ROOT="$HOME/vcpkg"
+
+# Configure and build with the vcpkg toolchain
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build -j
 
 # Or use the one-stop clean-rebuild script (Linux / macOS)
 ./build.sh
 ```
+
+On the first configure, vcpkg manifest mode installs `curl` into the local `vcpkg_installed/` directory automatically.
+
+Windows developers can use `./winbuild2019.ps1`, which already locates the vcpkg toolchain and configures the project with it.
 
 Then run the app:
 
@@ -164,7 +176,7 @@ See the [`samples/`](samples/) directory for ready-to-use example config files.
 ### Build
 
 ```bash
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build -j
 ```
 
