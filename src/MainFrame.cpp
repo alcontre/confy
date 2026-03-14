@@ -263,6 +263,9 @@ void MainFrame::OnApply(wxCommandEvent &)
          artifactJob.componentName        = component.name;
          artifactJob.componentDisplayName = component.displayName;
          artifactJob.repositoryUrl        = component.artifact.url;
+         artifactJob.artifactPath         = component.artifact.relativePath.empty()
+                                                ? component.name
+                                                : component.artifact.relativePath + "/" + component.name;
          artifactJob.version              = component.artifact.version;
          artifactJob.buildType            = component.artifact.buildType;
          artifactJob.targetDirectory      = (std::filesystem::path(config_.rootPath) / component.path).string();
@@ -403,7 +406,10 @@ void MainFrame::RenderConfig()
    // mutated again until workers are stopped and the next RenderConfig() runs.
    for (std::size_t i = 0; i < config_.components.size(); ++i) {
       componentSourceRequests_[i]   = config_.components[i].source.url;
-      componentArtifactRequests_[i] = {config_.components[i].artifact.url, config_.components[i].name};
+      componentArtifactRequests_[i] = {config_.components[i].artifact.url,
+          config_.components[i].artifact.relativePath.empty()
+              ? config_.components[i].name
+              : config_.components[i].artifact.relativePath + "/" + config_.components[i].name};
       AddComponentRow(i);
    }
 

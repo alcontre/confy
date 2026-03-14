@@ -23,6 +23,7 @@ struct ArtifactConfig
 {
    bool enabled{false};
    std::string url;
+   std::string relativePath;
    std::string version;
    std::string buildType;
    std::string script;
@@ -32,7 +33,14 @@ struct ArtifactConfig
 
 inline bool operator==(const ArtifactConfig &lhs, const ArtifactConfig &rhs)
 {
-   return lhs.enabled == rhs.enabled && lhs.url == rhs.url && lhs.version == rhs.version && lhs.buildType == rhs.buildType && lhs.script == rhs.script && lhs.regexIncludes == rhs.regexIncludes && lhs.regexExcludes == rhs.regexExcludes;
+   return lhs.enabled == rhs.enabled &&
+          lhs.url == rhs.url &&
+          lhs.relativePath == rhs.relativePath &&
+          lhs.version == rhs.version &&
+          lhs.buildType == rhs.buildType &&
+          lhs.script == rhs.script &&
+          lhs.regexIncludes == rhs.regexIncludes &&
+          lhs.regexExcludes == rhs.regexExcludes;
 }
 
 struct ComponentConfig

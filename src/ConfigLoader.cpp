@@ -176,12 +176,13 @@ LoadResult ConfigLoader::LoadFromString(const std::string &xml) const
 
             auto *artifactNode = FindChildCI(node, "artifact");
             if (artifactNode) {
-               component.artifactPresent    = true;
-               component.artifact.enabled   = HasChildCI(artifactNode, "isenabled");
-               component.artifact.url       = GetChildValueCI(artifactNode, "url");
-               component.artifact.version   = GetChildValueCI(artifactNode, "version");
-               component.artifact.buildType = GetChildValueCI(artifactNode, "buildtype");
-               component.artifact.script    = GetChildValueCI(artifactNode, "script");
+               component.artifactPresent       = true;
+               component.artifact.enabled      = HasChildCI(artifactNode, "isenabled");
+               component.artifact.url          = GetChildValueCI(artifactNode, "url");
+               component.artifact.relativePath = GetChildValueCI(artifactNode, "relativepath");
+               component.artifact.version      = GetChildValueCI(artifactNode, "version");
+               component.artifact.buildType    = GetChildValueCI(artifactNode, "buildtype");
+               component.artifact.script       = GetChildValueCI(artifactNode, "script");
                component.artifact.regexIncludes =
                    CollectRegexFiltersCI(artifactNode, "regex-include");
                component.artifact.regexExcludes =

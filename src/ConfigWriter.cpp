@@ -92,6 +92,9 @@ std::string SaveConfigToString(const ConfigModel &config)
             xml << "                <IsEnabled/>\n";
          }
          WriteTag(xml, "                ", "url", component.artifact.url);
+         if (!component.artifact.relativePath.empty()) {
+            WriteTag(xml, "                ", "RelativePath", component.artifact.relativePath);
+         }
          WriteTag(xml, "                ", "version", component.artifact.version);
          WriteTag(xml, "                ", "buildtype", component.artifact.buildType);
 

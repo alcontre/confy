@@ -21,6 +21,7 @@ TEST_CASE("ConfigLoader parses representative config XML")
             <Artifact>
                 <IsEnabled/>
                 <url>http://localhost:8081/#browse/browse:raw-asdf-hosted</url>
+                <RelativePath>products</RelativePath>
                 <version>myProduct</version>
                 <buildtype>Debug</buildtype>
                 <regex-include>
@@ -212,6 +213,7 @@ TEST_CASE("ConfigLoader parses representative config XML")
    CHECK(first.source.enabled);
    CHECK(first.artifact.enabled);
    CHECK(first.source.branchOrTag == "master");
+   CHECK(first.artifact.relativePath == "products");
    CHECK(first.artifact.buildType == "Debug");
    REQUIRE(first.artifact.regexIncludes.size() == 2);
    CHECK(first.artifact.regexIncludes[0] == "\\.dll$");

@@ -304,7 +304,7 @@ void DownloadWorkerQueue::ProcessJob(const NexusDownloadJob &job)
 
    const auto ok = client.DownloadArtifactTree(
        job.repositoryUrl,
-       job.componentName,
+       job.artifactPath,
        job.version,
        job.buildType,
        job.targetDirectory,

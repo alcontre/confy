@@ -22,6 +22,7 @@ TEST_CASE("ConfigWriter round-trips configuration and summary output")
    enabledArtifact.source.script          = "git submodule update --init --recursive";
    enabledArtifact.artifact.enabled       = true;
    enabledArtifact.artifact.url           = "https://repo.example.com/releases";
+   enabledArtifact.artifact.relativePath  = "products";
    enabledArtifact.artifact.version       = "1.2.3";
    enabledArtifact.artifact.buildType     = "Release";
    enabledArtifact.artifact.script        = "cmake -S . -B build && cmake --build build";
@@ -35,6 +36,7 @@ TEST_CASE("ConfigWriter round-trips configuration and summary output")
    disabledArtifact.artifactPresent        = true;
    disabledArtifact.artifact.enabled       = false;
    disabledArtifact.artifact.url           = "https://repo.example.com/tooling";
+   disabledArtifact.artifact.relativePath  = "tooling";
    disabledArtifact.artifact.version       = "9.9.9";
    disabledArtifact.artifact.buildType     = "Debug";
    disabledArtifact.artifact.script        = "echo tooling";

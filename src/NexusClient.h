@@ -26,7 +26,7 @@ class NexusClient final
    explicit NexusClient(AuthCredentials credentials);
 
    bool DownloadArtifactTree(const std::string &repositoryBrowseUrl,
-       const std::string &componentName,
+       const std::string &artifactPath,
        const std::string &version,
        const std::string &buildType,
        const std::string &targetDirectory,
@@ -36,11 +36,11 @@ class NexusClient final
        ProgressCallback progress,
        std::string &errorMessage) const;
    bool ListComponentVersions(const std::string &repositoryBrowseUrl,
-       const std::string &componentName,
+       const std::string &artifactPath,
        std::vector<std::string> &outVersions,
        std::string &errorMessage) const;
    bool ListBuildTypes(const std::string &repositoryBrowseUrl,
-       const std::string &componentName,
+       const std::string &artifactPath,
        const std::string &version,
        std::vector<std::string> &outBuildTypes,
        std::string &errorMessage) const;

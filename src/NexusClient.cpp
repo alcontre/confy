@@ -414,12 +414,12 @@ std::vector<std::string> NexusClient::ExtractImmediateChildDirectories(
 }
 
 bool NexusClient::ListComponentVersions(const std::string &repositoryBrowseUrl,
-    const std::string &componentName,
+    const std::string &artifactPath,
     std::vector<std::string> &outVersions,
     std::string &errorMessage) const
 {
-   wxLogMessage("[nexus] listing component versions component='%s' repoUrl='%s'",
-       componentName.c_str(),
+   wxLogMessage("[nexus] listing component versions path='%s' repoUrl='%s'",
+       artifactPath.c_str(),
        repositoryBrowseUrl.c_str());
    outVersions.clear();
    RepoInfo repo;
@@ -434,32 +434,32 @@ bool NexusClient::ListComponentVersions(const std::string &repositoryBrowseUrl,
       return false;
    }
 
-   if (!ListChildDirectories(repo, creds, componentName, outVersions, errorMessage)) {
+   if (!ListChildDirectories(repo, creds, artifactPath, outVersions, errorMessage)) {
       return false;
    }
 
-   wxLogMessage("[nexus] discovered versions component='%s' count=%zu",
-       componentName.c_str(),
+   wxLogMessage("[nexus] discovered versions path='%s' count=%zu",
+       artifactPath.c_str(),
        outVersions.size());
    // Keep per-component version logging bounded to avoid excessive console spam on large repos.
    constexpr std::size_t kMaxLoggedVersions = 20;
    const auto toLog                         = std::min(outVersions.size(), kMaxLoggedVersions);
    for (std::size_t i = 0; i < toLog; ++i) {
       const auto &version = outVersions[i];
-      wxLogMessage("[nexus] discovered version component='%s' value='%s'",
-          componentName.c_str(),
+      wxLogMessage("[nexus] discovered version path='%s' value='%s'",
+          artifactPath.c_str(),
           version.c_str());
    }
    if (outVersions.size() > kMaxLoggedVersions) {
-      wxLogMessage("[nexus] additional versions omitted component='%s' omittedCount=%zu",
-          componentName.c_str(),
+      wxLogMessage("[nexus] additional versions omitted path='%s' omittedCount=%zu",
+          artifactPath.c_str(),
           outVersions.size() - kMaxLoggedVersions);
    }
    return true;
 }
 
 bool NexusClient::ListBuildTypes(const std::string &repositoryBrowseUrl,
-    const std::string &componentName,
+    const std::string &artifactPath,
     const std::string &version,
     std::vector<std::string> &outBuildTypes,
     std::string &errorMessage) const
@@ -477,7 +477,7 @@ bool NexusClient::ListBuildTypes(const std::string &repositoryBrowseUrl,
       return false;
    }
 
-   const auto prefix = componentName + "/" + version;
+   const auto prefix = artifactPath + "/" + version;
    if (!ListChildDirectories(repo, creds, prefix, outBuildTypes, errorMessage)) {
       return false;
    }
@@ -485,7 +485,7 @@ bool NexusClient::ListBuildTypes(const std::string &repositoryBrowseUrl,
 }
 
 bool NexusClient::DownloadArtifactTree(const std::string &repositoryBrowseUrl,
-    const std::string &componentName,
+    const std::string &artifactPath,
     const std::string &version,
     const std::string &buildType,
     const std::string &targetDirectory,
@@ -496,9 +496,9 @@ bool NexusClient::DownloadArtifactTree(const std::string &repositoryBrowseUrl,
     std::string &errorMessage) const
 {
    wxLogMessage(
-       "[nexus] download request repoUrl='%s' component='%s' version='%s' buildType='%s' target='%s'",
+       "[nexus] download request repoUrl='%s' artifactPath='%s' version='%s' buildType='%s' target='%s'",
        repositoryBrowseUrl.c_str(),
-       componentName.c_str(),
+       artifactPath.c_str(),
        version.c_str(),
        buildType.c_str(),
        targetDirectory.c_str());
@@ -527,7 +527,7 @@ bool NexusClient::DownloadArtifactTree(const std::string &repositoryBrowseUrl,
        repo.hostPort.c_str(),
        creds.username.c_str());
 
-   const auto prefix = componentName + "/" + version + "/" + buildType + "/";
+   const auto prefix = artifactPath + "/" + version + "/" + buildType + "/";
 
    std::vector<NexusArtifactAsset> assets;
    if (!ListAssets(repo, creds, prefix, assets, errorMessage)) {

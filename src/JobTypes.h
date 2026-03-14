@@ -13,6 +13,7 @@ struct NexusDownloadJob
    std::string componentName;
    std::string componentDisplayName;
    std::string repositoryUrl;
+   std::string artifactPath;
    std::string version;
    std::string buildType;
    std::string targetDirectory;
