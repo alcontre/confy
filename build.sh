@@ -4,6 +4,29 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
+USE_VCPKG=0
+
+for arg in "$@"; do
+	case "${arg}" in
+		--vcpkg)
+			USE_VCPKG=1
+			;;
+		-h|--help)
+			cat <<'EOF'
+Usage: ./build.sh [--vcpkg]
+
+Options:
+  --vcpkg    Configure CMake with the local vcpkg toolchain.
+EOF
+			exit 0
+			;;
+		*)
+			echo "[confy] Unknown argument: ${arg}" >&2
+			echo "[confy] Usage: ./build.sh [--vcpkg]" >&2
+			exit 1
+			;;
+	esac
+done
 
 find_vcpkg_toolchain() {
 	local vcpkg_root=""
@@ -33,15 +56,21 @@ find_vcpkg_toolchain() {
 	printf '%s\n' "${toolchain_file}"
 }
 
-if ! TOOLCHAIN_FILE="$(find_vcpkg_toolchain)"; then
-	cat >&2 <<'EOF'
+CMAKE_ARGS=()
+
+if [[ "${USE_VCPKG}" -eq 1 ]]; then
+	if ! TOOLCHAIN_FILE="$(find_vcpkg_toolchain)"; then
+		cat >&2 <<'EOF'
 [confy] Could not locate vcpkg.
 [confy] Install it with:
 [confy]   git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
 [confy]   "$HOME/vcpkg/bootstrap-vcpkg.sh"
-[confy] Then either export VCPKG_ROOT="$HOME/vcpkg" or re-run this script.
+[confy] Then either export VCPKG_ROOT="$HOME/vcpkg" or re-run this script with --vcpkg.
 EOF
-	exit 1
+		exit 1
+	fi
+
+	CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN_FILE}")
 fi
 
 echo "[confy] Cleaning build directory: ${BUILD_DIR}"
@@ -50,10 +79,13 @@ rm -rf "${BUILD_DIR}"
 echo "[confy] Recreating build directory"
 mkdir -p "${BUILD_DIR}"
 
-echo "[confy] Using vcpkg toolchain: ${TOOLCHAIN_FILE}"
+if [[ "${USE_VCPKG}" -eq 1 ]]; then
+	echo "[confy] Using vcpkg toolchain: ${TOOLCHAIN_FILE}"
+else
+	echo "[confy] Configuring without vcpkg"
+fi
 echo "[confy] Configuring project"
-cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
-	-DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}"
+cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" "${CMAKE_ARGS[@]}"
 
 echo "[confy] Compiling project"
 cmake --build "${BUILD_DIR}" -j

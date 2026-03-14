@@ -43,10 +43,12 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcp
 cmake --build build -j
 
 # Or use the one-stop clean-rebuild script (Linux / macOS)
-./build.sh
+./build.sh --vcpkg
 ```
 
 On the first configure, vcpkg manifest mode installs `curl` into the local `vcpkg_installed/` directory automatically.
+
+`./build.sh` now uses the default CMake dependency resolution path. Pass `--vcpkg` to make it opt into the vcpkg toolchain.
 
 Windows developers can use `./winbuild2019.ps1`, which already locates the vcpkg toolchain and configures the project with it.
 
@@ -143,7 +145,7 @@ The config file is an XML document that describes where your components live and
 </Config>
 ```
 
-See the [`samples/`](samples/) directory for ready-to-use example config files.
+See the [`samples/`](samples/) directory for a ready-to-use example config file.
 
 `<Component>/<Path>` is treated as relative to `<path>` by default. If `<Component>/<Path>` is absolute, it is used as-is. `%PATH%` is supported as a macro and is expanded to the top-level `<path>` value when the config is loaded.
 
