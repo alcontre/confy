@@ -32,6 +32,9 @@ namespace {
 constexpr int kIdLoadFile          = wxID_HIGHEST + 101;
 constexpr int kIdLoadLast          = wxID_HIGHEST + 102;
 constexpr int kIdLoadFromBitbucket = wxID_HIGHEST + 103;
+constexpr int kPickerButtonWidth   = 280;
+constexpr int kPickerButtonHeight  = 56;
+constexpr int kPickerButtonGap     = 12;
 
 std::string ResolveM2SettingsPath()
 {
@@ -342,38 +345,43 @@ namespace confy {
 
 PickMenuFrame::PickMenuFrame(std::function<void(const wxString &)> onConfigChosen,
     std::function<void()> onExitRequested) :
-    wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(520, 360)),
+    wxFrame(nullptr,
+        wxID_ANY,
+        "Confy",
+        wxDefaultPosition,
+        wxDefaultSize,
+        wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX)),
     onConfigChosen_(std::move(onConfigChosen)),
     onExitRequested_(std::move(onExitRequested))
 {
-   auto *panel     = new wxPanel(this);
-   auto *rootSizer = new wxBoxSizer(wxVERTICAL);
-   rootSizer->AddStretchSpacer();
-
-   auto *loadFileButton = new wxButton(panel, kIdLoadFile, "Load file");
-   auto buttonFont      = loadFileButton->GetFont();
-   buttonFont.MakeLarger();
-   loadFileButton->SetFont(buttonFont);
-   loadFileButton->SetMinSize(wxSize(280, 72));
-   rootSizer->Add(loadFileButton, 0, wxALIGN_CENTER_HORIZONTAL);
+   auto *panel       = new wxPanel(this);
+   auto *buttonSizer = new wxBoxSizer(wxVERTICAL);
 
    loadFromBitbucketButton_ = new wxButton(panel, kIdLoadFromBitbucket, "Load from Bitbucket");
-   loadFromBitbucketButton_->SetMinSize(wxSize(280, 36));
-   rootSizer->Add(loadFromBitbucketButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 8);
+   loadLastButton_          = new wxButton(panel, kIdLoadLast, "Load Last");
+   auto *loadFileButton     = new wxButton(panel, kIdLoadFile, "Load from File");
 
-   loadLastButton_ = new wxButton(panel, kIdLoadLast, "Load Last");
-   loadLastButton_->SetMinSize(wxSize(280, 36));
-   rootSizer->Add(loadLastButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, 8);
+   auto buttonFont = loadFileButton->GetFont();
+   buttonFont.MakeLarger();
+   for (wxButton *button : {loadFromBitbucketButton_, loadLastButton_, loadFileButton}) {
+      button->SetFont(buttonFont);
+      button->SetMinSize(wxSize(kPickerButtonWidth, kPickerButtonHeight));
+   }
 
-   rootSizer->AddStretchSpacer();
+   buttonSizer->Add(loadFromBitbucketButton_, 0, wxALIGN_CENTER_HORIZONTAL);
+   buttonSizer->Add(loadLastButton_, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, kPickerButtonGap);
+   buttonSizer->Add(loadFileButton, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, kPickerButtonGap);
 
    auto *panelSizer = new wxBoxSizer(wxVERTICAL);
-   panelSizer->Add(rootSizer, 1, wxEXPAND | wxALL, 10);
-   panel->SetSizer(panelSizer);
+   panelSizer->Add(buttonSizer, 0, wxALL | wxALIGN_CENTER_HORIZONTAL, 24);
+   panel->SetSizerAndFit(panelSizer);
 
    auto *frameSizer = new wxBoxSizer(wxVERTICAL);
    frameSizer->Add(panel, 1, wxEXPAND);
-   SetSizer(frameSizer);
+   SetSizerAndFit(frameSizer);
+   SetMinSize(GetSize());
+   SetMaxSize(GetSize());
+   CentreOnScreen();
 
    Bind(wxEVT_BUTTON, &PickMenuFrame::OnLoadFile, this, kIdLoadFile);
    Bind(wxEVT_BUTTON, &PickMenuFrame::OnLoadLast, this, kIdLoadLast);
