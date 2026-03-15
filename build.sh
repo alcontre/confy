@@ -58,6 +58,13 @@ find_vcpkg_toolchain() {
 
 CMAKE_ARGS=()
 
+if CMAKE_VERSION="$(cmake --version 2>/dev/null | awk 'NR==1 { print $3 }')" && [[ -n "${CMAKE_VERSION}" ]]; then
+	CMAKE_MAJOR_VERSION="${CMAKE_VERSION%%.*}"
+	if [[ "${CMAKE_MAJOR_VERSION}" -ge 4 ]]; then
+		CMAKE_ARGS+=("-DCMAKE_POLICY_VERSION_MINIMUM=3.5")
+	fi
+fi
+
 if [[ "${USE_VCPKG}" -eq 1 ]]; then
 	if ! TOOLCHAIN_FILE="$(find_vcpkg_toolchain)"; then
 		cat >&2 <<'EOF'
@@ -85,7 +92,11 @@ else
 	echo "[confy] Configuring without vcpkg"
 fi
 echo "[confy] Configuring project"
-cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" "${CMAKE_ARGS[@]}"
+if [[ ${#CMAKE_ARGS[@]} -gt 0 ]]; then
+	cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" "${CMAKE_ARGS[@]}"
+else
+	cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}"
+fi
 
 echo "[confy] Compiling project"
 cmake --build "${BUILD_DIR}" -j
