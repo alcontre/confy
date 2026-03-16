@@ -220,7 +220,7 @@ LoadResult ConfigLoader::LoadFromFile(const std::string &filePath) const
 {
    const auto xml = ReadAllText(filePath);
    if (!xml.has_value()) {
-      return {.success = false, .errorMessage = "Could not read file."};
+      return LoadResult{false, "Could not read file.", {}};
    }
 
    return LoadFromString(*xml);
