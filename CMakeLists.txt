@@ -111,9 +111,8 @@ target_include_directories(confy_service_test PRIVATE
 target_link_libraries(confy_service_test PRIVATE doctest::doctest wx::base CURL::libcurl)
 
 enable_testing()
-include(${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest/scripts/cmake/doctest.cmake)
-doctest_discover_tests(confy_config_io_test)
-doctest_discover_tests(confy_service_test)
+add_test(NAME confy_config_io_test COMMAND confy_config_io_test)
+add_test(NAME confy_service_test COMMAND confy_service_test)
 
 if(MSVC)
     target_compile_options(confy PRIVATE /W4)
