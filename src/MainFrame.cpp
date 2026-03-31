@@ -500,6 +500,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
    rowBaselines_[componentIndex].artifactVersion     = component.artifact.version;
    rowBaselines_[componentIndex].artifactBuildType   = component.artifact.buildType;
    rowChangeState_[componentIndex].modifiedIndicator = modifiedIndicator;
+   metadataState_[componentIndex].pendingBuildTypeSelection = component.artifact.buildType;
 
    auto bindComboWheelProtection = [this](wxComboBox *combo) {
       combo->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, combo](wxCommandEvent &) { openComboDropdowns_.insert(combo); });
@@ -618,7 +619,12 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       const auto version                                     = rows_[componentIndex].artifactVersion->GetValue().ToStdString();
       config_.components[componentIndex].artifact.version    = version;
       RefreshRowModifiedIndicator(componentIndex);
-      RefreshArtifactBuildTypes(componentIndex, version);
+      if (metadataState_[componentIndex].buildTypesByVersion.find(version) !=
+          metadataState_[componentIndex].buildTypesByVersion.end()) {
+         RefreshArtifactBuildTypes(componentIndex, version);
+      } else {
+         ClearArtifactBuildTypes(componentIndex);
+      }
       EnqueueBuildTypeFetch(componentIndex, version);
    });
    row.artifactVersion->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, componentIndex](wxCommandEvent &) {
@@ -636,6 +642,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
       config_.components[componentIndex].artifact.buildType =
           rows_[componentIndex].artifactBuildType->GetValue().ToStdString();
+      metadataState_[componentIndex].pendingBuildTypeSelection = config_.components[componentIndex].artifact.buildType;
       RefreshRowModifiedIndicator(componentIndex);
    });
    row.artifactBuildType->Bind(wxEVT_COMBOBOX, [this, componentIndex](wxCommandEvent &) {
@@ -646,6 +653,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
       config_.components[componentIndex].artifact.buildType =
           rows_[componentIndex].artifactBuildType->GetValue().ToStdString();
+      metadataState_[componentIndex].pendingBuildTypeSelection = config_.components[componentIndex].artifact.buildType;
       RefreshRowModifiedIndicator(componentIndex);
    });
 
@@ -735,6 +743,28 @@ void MainFrame::RefreshRowEnabledState(std::size_t componentIndex)
    row.artifactBuildType->Enable(artifactExists && component.artifact.enabled);
 }
 
+void MainFrame::ClearArtifactBuildTypes(std::size_t componentIndex)
+{
+   if (componentIndex >= config_.components.size() || componentIndex >= rows_.size()) {
+      return;
+   }
+
+   auto &buildTypeBox      = rows_[componentIndex].artifactBuildType;
+   const bool hadBuildType = !config_.components[componentIndex].artifact.buildType.empty();
+
+   uiUpdating_ = true;
+   buildTypeBox->Clear();
+   buildTypeBox->SetValue(wxString());
+   uiUpdating_ = false;
+
+   config_.components[componentIndex].artifact.buildType.clear();
+   if (hadBuildType) {
+      rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
+      RefreshRowModifiedIndicator(componentIndex);
+   }
+   UpdateComboTooltip(*buildTypeBox);
+}
+
 void MainFrame::RefreshArtifactBuildTypes(std::size_t componentIndex, const std::string &version)
 {
    if (componentIndex >= config_.components.size() || componentIndex >= metadataState_.size() ||
@@ -747,12 +777,13 @@ void MainFrame::RefreshArtifactBuildTypes(std::size_t componentIndex, const std:
       return;
    }
 
-   auto &buildTypeBox       = rows_[componentIndex].artifactBuildType;
-   const auto selectedBuild = buildTypeBox->GetValue().ToStdString();
-   const auto &buildTypes   = buildTypesIt->second;
+   auto &buildTypeBox     = rows_[componentIndex].artifactBuildType;
+   auto &state            = metadataState_[componentIndex];
+   const auto &buildTypes = buildTypesIt->second;
    const bool keepSelection =
-       !selectedBuild.empty() && std::find(buildTypes.begin(), buildTypes.end(), selectedBuild) != buildTypes.end();
-   const auto nextBuildType   = keepSelection ? selectedBuild : std::string();
+       !state.pendingBuildTypeSelection.empty() &&
+       std::find(buildTypes.begin(), buildTypes.end(), state.pendingBuildTypeSelection) != buildTypes.end();
+   const auto nextBuildType   = keepSelection ? state.pendingBuildTypeSelection : std::string();
    const bool buildTypeChange = config_.components[componentIndex].artifact.buildType != nextBuildType;
 
    uiUpdating_ = true;
@@ -764,6 +795,7 @@ void MainFrame::RefreshArtifactBuildTypes(std::size_t componentIndex, const std:
    uiUpdating_ = false;
 
    config_.components[componentIndex].artifact.buildType = nextBuildType;
+   state.pendingBuildTypeSelection = nextBuildType;
    if (buildTypeChange) {
       rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
       RefreshRowModifiedIndicator(componentIndex);
