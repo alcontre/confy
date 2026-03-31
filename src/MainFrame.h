@@ -86,6 +86,7 @@ class MainFrame final : public wxFrame
    void UpdateRowTooltips(std::size_t componentIndex);
    void RefreshRowModifiedIndicator(std::size_t componentIndex);
    void RefreshRowEnabledState(std::size_t componentIndex);
+   void RefreshArtifactBuildTypes(std::size_t componentIndex, const std::string &version);
    void StartMetadataWorkers();
    void StopMetadataWorkers();
    void EnqueueVersionFetch(std::size_t componentIndex, bool prioritize);

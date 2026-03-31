@@ -618,6 +618,7 @@ void MainFrame::AddComponentRow(std::size_t componentIndex)
       const auto version                                     = rows_[componentIndex].artifactVersion->GetValue().ToStdString();
       config_.components[componentIndex].artifact.version    = version;
       RefreshRowModifiedIndicator(componentIndex);
+      RefreshArtifactBuildTypes(componentIndex, version);
       EnqueueBuildTypeFetch(componentIndex, version);
    });
    row.artifactVersion->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, componentIndex](wxCommandEvent &) {
@@ -732,6 +733,42 @@ void MainFrame::RefreshRowEnabledState(std::size_t componentIndex)
    row.artifactEnabled->SetValue(artifactExists && component.artifact.enabled);
    row.artifactVersion->Enable(artifactExists && component.artifact.enabled);
    row.artifactBuildType->Enable(artifactExists && component.artifact.enabled);
+}
+
+void MainFrame::RefreshArtifactBuildTypes(std::size_t componentIndex, const std::string &version)
+{
+   if (componentIndex >= config_.components.size() || componentIndex >= metadataState_.size() ||
+       componentIndex >= rows_.size() || config_.components[componentIndex].artifact.version != version) {
+      return;
+   }
+
+   const auto buildTypesIt = metadataState_[componentIndex].buildTypesByVersion.find(version);
+   if (buildTypesIt == metadataState_[componentIndex].buildTypesByVersion.end()) {
+      return;
+   }
+
+   auto &buildTypeBox       = rows_[componentIndex].artifactBuildType;
+   const auto selectedBuild = buildTypeBox->GetValue().ToStdString();
+   const auto &buildTypes   = buildTypesIt->second;
+   const bool keepSelection =
+       !selectedBuild.empty() && std::find(buildTypes.begin(), buildTypes.end(), selectedBuild) != buildTypes.end();
+   const auto nextBuildType   = keepSelection ? selectedBuild : std::string();
+   const bool buildTypeChange = config_.components[componentIndex].artifact.buildType != nextBuildType;
+
+   uiUpdating_ = true;
+   buildTypeBox->Clear();
+   for (const auto &buildType : buildTypes) {
+      buildTypeBox->Append(buildType);
+   }
+   buildTypeBox->SetValue(nextBuildType);
+   uiUpdating_ = false;
+
+   config_.components[componentIndex].artifact.buildType = nextBuildType;
+   if (buildTypeChange) {
+      rowChangeState_[componentIndex].artifactBuildTypeTouched = true;
+      RefreshRowModifiedIndicator(componentIndex);
+   }
+   UpdateComboTooltip(*buildTypeBox);
 }
 
 void MainFrame::EnqueueSourceRefsFetch(std::size_t componentIndex, bool prioritize)
@@ -1100,23 +1137,7 @@ void MainFrame::MetadataWorkerLoop()
             return;
          }
          state.buildTypesByVersion[version] = buildTypes;
-
-         if (config_.components[index].artifact.version != version) {
-            return;
-         }
-
-         auto &buildTypeBox           = rows_[index].artifactBuildType;
-         const auto previousSelection = buildTypeBox->GetValue().ToStdString();
-         uiUpdating_                  = true;
-         buildTypeBox->Clear();
-         for (const auto &buildType : buildTypes) {
-            buildTypeBox->Append(buildType);
-         }
-         if (!previousSelection.empty()) {
-            buildTypeBox->SetValue(previousSelection);
-         }
-         uiUpdating_ = false;
-         UpdateComboTooltip(*buildTypeBox);
+         RefreshArtifactBuildTypes(index, version);
       });
    }
 }
