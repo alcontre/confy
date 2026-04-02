@@ -866,9 +866,26 @@ void MainFrame::EnqueueBuildTypeFetch(std::size_t componentIndex, const std::str
    if (!HasArtifact(config_.components[componentIndex]) || config_.components[componentIndex].artifact.url.empty()) {
       return;
    }
-   auto &state = metadataState_[componentIndex];
-   if (state.buildTypesByVersion.find(version) != state.buildTypesByVersion.end() ||
-       state.buildTypesLoadingVersions.find(version) != state.buildTypesLoadingVersions.end()) {
+   auto &state    = metadataState_[componentIndex];
+   const auto hit = state.buildTypesByVersion.find(version);
+   if (hit != state.buildTypesByVersion.end()) {
+      // Cache hit; apply the previously-fetched build types to the dropdown
+      auto &buildTypeBox           = rows_[componentIndex].artifactBuildType;
+      const auto previousSelection = buildTypeBox->GetValue().ToStdString();
+      uiUpdating_                  = true;
+      buildTypeBox->Clear();
+      for (const auto &buildType : hit->second) {
+         buildTypeBox->Append(buildType);
+      }
+      if (!previousSelection.empty()) {
+         buildTypeBox->SetValue(previousSelection);
+      }
+      uiUpdating_ = false;
+      UpdateComboTooltip(*buildTypeBox);
+      return;
+   }
+   // Already in-flight for this version; wait for the worker callback.
+   if (state.buildTypesLoadingVersions.find(version) != state.buildTypesLoadingVersions.end()) {
       return;
    }
 
