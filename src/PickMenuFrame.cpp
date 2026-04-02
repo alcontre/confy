@@ -1,5 +1,6 @@
 #include "PickMenuFrame.h"
 
+#include "AppInfo.h"
 #include "AppSettings.h"
 #include "AuthCredentials.h"
 #include "BitbucketClient.h"
@@ -347,7 +348,7 @@ PickMenuFrame::PickMenuFrame(std::function<void(const wxString &)> onConfigChose
     std::function<void()> onExitRequested) :
     wxFrame(nullptr,
         wxID_ANY,
-        "Confy",
+        AppTitle(),
         wxDefaultPosition,
         wxDefaultSize,
         wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX)),

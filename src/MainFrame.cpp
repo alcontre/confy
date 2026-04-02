@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 
+#include "AppInfo.h"
 #include "AppSettings.h"
 #include "AuthCredentials.h"
 #include "ConfigLoader.h"
@@ -61,7 +62,7 @@ bool HasArtifact(const confy::ComponentConfig &component)
 namespace confy {
 
 MainFrame::MainFrame(const wxString &initialConfigPath, std::function<void()> onReturnToPicker) :
-    wxFrame(nullptr, wxID_ANY, "Confy", wxDefaultPosition, wxSize(900, 600)),
+    wxFrame(nullptr, wxID_ANY, AppTitle(), wxDefaultPosition, wxSize(900, 600)),
     onReturnToPicker_(std::move(onReturnToPicker))
 {
    CreateStatusBar(1);

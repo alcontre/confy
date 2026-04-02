@@ -42,6 +42,7 @@ set(CONFY_SOURCES
 
 set(CONFY_HEADERS
     src/App.h
+    src/AppInfo.h
     src/AppSettings.h
     src/DebugConsole.h
     src/PickMenuFrame.h

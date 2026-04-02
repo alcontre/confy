@@ -1,5 +1,6 @@
 #include "App.h"
 
+#include "AppInfo.h"
 #include "AppSettings.h"
 #include "DebugConsole.h"
 #include "MainFrame.h"
@@ -12,6 +13,8 @@ namespace confy {
 
 bool App::OnInit()
 {
+   SetAppName(APP_NAME);
+
    wxString executableDir;
    const auto executablePath = wxStandardPaths::Get().GetExecutablePath();
    if (!executablePath.empty()) {
