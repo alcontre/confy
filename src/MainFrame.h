@@ -86,6 +86,8 @@ class MainFrame final : public wxFrame
    void UpdateRowTooltips(std::size_t componentIndex);
    void RefreshRowModifiedIndicator(std::size_t componentIndex);
    void RefreshRowEnabledState(std::size_t componentIndex);
+   void ClearArtifactBuildTypes(std::size_t componentIndex);
+   void RefreshArtifactBuildTypes(std::size_t componentIndex, const std::string &version);
    void StartMetadataWorkers();
    void StopMetadataWorkers();
    void EnqueueVersionFetch(std::size_t componentIndex, bool prioritize);
@@ -111,6 +113,7 @@ class MainFrame final : public wxFrame
       bool sourceRefsLoaded{false};
       bool versionsLoading{false};
       bool versionsLoaded{false};
+      std::string pendingBuildTypeSelection;
       std::unordered_map<std::string, std::vector<std::string>> buildTypesByVersion;
       std::unordered_set<std::string> buildTypesLoadingVersions;
    };
